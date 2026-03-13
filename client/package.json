@@ -16,19 +16,20 @@
   "license": "MIT",
   "dependencies": {
     "axios": "^1.13.6",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "react-router-dom": "^7.13.1"
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "@vitejs/plugin-react": "^5.1.4",
+    "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.27",
+    "happy-dom": "^14.12.3",
     "jsdom": "^28.1.0",
     "postcss": "^8.5.8",
-    "tailwindcss": "^4.2.1",
-    "vite": "^7.3.1",
-    "vitest": "^4.0.18"
+    "tailwindcss": "^3.4.1",
+    "vite": "^4.5.3",
+    "vitest": "^1.6.0"
   }
 }
