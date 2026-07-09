@@ -7,7 +7,9 @@ services:
     name: atlasly
     runtime: node
     plan: starter # required for the persistent disk below; photos live there
-    buildCommand: cd server && npm ci && cd ../client && npm ci && npm run build
+    # --include=dev: NODE_ENV=production makes npm skip devDependencies,
+    # but the client build needs vite (a devDependency)
+    buildCommand: cd server && npm ci && cd ../client && npm ci --include=dev && npm run build
     startCommand: cd server && node index.js
     healthCheckPath: /health
     # Uploaded photos/selfies must survive deploys and restarts
