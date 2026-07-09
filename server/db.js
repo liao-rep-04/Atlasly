@@ -51,22 +51,6 @@ export const initializeDatabase = async () => {
     await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS gender VARCHAR(20)`);
     console.log('[DB] ✓ Users columns migrated');
 
-    // Trip membership: owners create rows with role 'owner'; invitations
-    // create 'member' rows that start as status 'pending'
-    await query(`
-      CREATE TABLE IF NOT EXISTS trip_members (
-        id VARCHAR(255) PRIMARY KEY,
-        trip_id VARCHAR(255) REFERENCES trips(id) ON DELETE CASCADE,
-        user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
-        role VARCHAR(20) NOT NULL DEFAULT 'member',
-        status VARCHAR(20) NOT NULL DEFAULT 'pending',
-        invited_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE (trip_id, user_id)
-      )
-    `);
-    console.log('[DB] ✓ Trip members table created/verified');
-
     // Trips table
     await query(`
       CREATE TABLE IF NOT EXISTS trips (
@@ -83,6 +67,23 @@ export const initializeDatabase = async () => {
       )
     `);
     console.log('[DB] ✓ Trips table created/verified');
+
+    // Trip membership: owners create rows with role 'owner'; invitations
+    // create 'member' rows that start as status 'pending'.
+    // Must come after both users and trips (foreign keys).
+    await query(`
+      CREATE TABLE IF NOT EXISTS trip_members (
+        id VARCHAR(255) PRIMARY KEY,
+        trip_id VARCHAR(255) REFERENCES trips(id) ON DELETE CASCADE,
+        user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+        role VARCHAR(20) NOT NULL DEFAULT 'member',
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        invited_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (trip_id, user_id)
+      )
+    `);
+    console.log('[DB] ✓ Trip members table created/verified');
 
     // Trip items table (experiences, dining, hotels, transportation)
     await query(`
