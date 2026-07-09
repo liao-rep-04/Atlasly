@@ -77,12 +77,19 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  // Persist profile changes (e.g. selfie/gender completion) to the session
+  const updateUser = (userData) => {
+    localStorage.setItem('user', JSON.stringify(userData));
+    setUser(userData);
+  };
+
   const value = {
     user,
     loading,
     login,
     register,
     logout,
+    updateUser,
     isAuthenticated: !!user,
   };
 

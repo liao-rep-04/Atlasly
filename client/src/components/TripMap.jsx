@@ -1,4 +1,4 @@
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import { useEffect } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -30,6 +30,14 @@ const MapBounds = ({ locations }) => {
     }
   }, [locations, map]);
 
+  return null;
+};
+
+// Forwards map clicks to the parent (used for drop-a-pin adding)
+const MapClickHandler = ({ onMapClick }) => {
+  useMapEvents({
+    click: (e) => onMapClick && onMapClick(e.latlng),
+  });
   return null;
 };
 
@@ -75,11 +83,33 @@ const createCustomIcon = (type) => {
   });
 };
 
-const TripMap = ({ tripItems = [], onItemClick }) => {
-  // Filter items that have valid coordinates
-  const locationsWithCoords = tripItems.filter(
-    (item) => item.latitude && item.longitude
-  );
+// A pulsing marker for the in-progress "drop a pin" position
+const draftPinIcon = L.divIcon({
+  className: 'custom-marker',
+  html: `
+    <div style="
+      background: #f59e0b;
+      width: 32px;
+      height: 32px;
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      border: 3px dashed white;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+    "></div>
+  `,
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+});
+
+const TripMap = ({ tripItems = [], onItemClick, onMapClick, draftPin }) => {
+  // Filter items that have valid coordinates (pg returns decimals as strings)
+  const locationsWithCoords = tripItems
+    .filter((item) => item.latitude != null && item.longitude != null)
+    .map((item) => ({
+      ...item,
+      latitude: parseFloat(item.latitude),
+      longitude: parseFloat(item.longitude),
+    }));
 
   // Create route path from ordered items
   const routePath = locationsWithCoords
@@ -98,7 +128,8 @@ const TripMap = ({ tripItems = [], onItemClick }) => {
       ? [locationsWithCoords[0].latitude, locationsWithCoords[0].longitude]
       : defaultCenter;
 
-  if (locationsWithCoords.length === 0) {
+  // Without a click handler there's nothing to do on an empty map
+  if (locationsWithCoords.length === 0 && !onMapClick) {
     return (
       <div className="w-full h-full rounded-xl overflow-hidden shadow-lg border border-neutral-200 flex items-center justify-center bg-gradient-to-br from-primary-50 to-secondary-50">
         <div className="text-center p-8">
@@ -118,7 +149,7 @@ const TripMap = ({ tripItems = [], onItemClick }) => {
     <div className="w-full h-full rounded-xl overflow-hidden shadow-lg border border-neutral-200 relative">
       <MapContainer
         center={center}
-        zoom={13}
+        zoom={locationsWithCoords.length > 0 ? 13 : 2}
         scrollWheelZoom={true}
         style={{ height: '100%', width: '100%' }}
         className="z-0"
@@ -130,6 +161,12 @@ const TripMap = ({ tripItems = [], onItemClick }) => {
 
         {/* Auto-fit bounds to show all markers */}
         <MapBounds locations={locationsWithCoords} />
+
+        {/* Drop-a-pin support */}
+        {onMapClick && <MapClickHandler onMapClick={onMapClick} />}
+        {draftPin && (
+          <Marker position={[draftPin.lat, draftPin.lng]} icon={draftPinIcon} />
+        )}
 
         {/* Route line showing optimal path */}
         {routePath.length > 1 && (

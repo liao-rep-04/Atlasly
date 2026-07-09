@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import SelfieInput from '../components/SelfieInput';
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -9,7 +10,9 @@ const Register = () => {
     password: '',
     confirmPassword: '',
     fullName: '',
+    gender: '',
   });
+  const [selfie, setSelfie] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -32,6 +35,11 @@ const Register = () => {
       return;
     }
 
+    if (!selfie) {
+      setError('Please add a selfie — it becomes your travel avatar');
+      return;
+    }
+
     setLoading(true);
 
     const result = await register({
@@ -39,6 +47,8 @@ const Register = () => {
       email: formData.email,
       password: formData.password,
       fullName: formData.fullName,
+      gender: formData.gender,
+      selfie,
     });
 
     if (result.success) {
@@ -69,6 +79,32 @@ const Register = () => {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            <SelfieInput onChange={setSelfie} />
+
+            <div>
+              <label htmlFor="gender" className="label">
+                Gender *
+              </label>
+              <select
+                id="gender"
+                name="gender"
+                value={formData.gender}
+                onChange={handleChange}
+                className="input"
+                required
+              >
+                <option value="" disabled>
+                  Choose your travel avatar style
+                </option>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="other">Other / prefer not to say</option>
+              </select>
+              <p className="mt-1 text-xs text-neutral-500">
+                Picks the cartoon body your selfie rides on during playback
+              </p>
+            </div>
+
             <div>
               <label htmlFor="fullName" className="label">
                 Full Name

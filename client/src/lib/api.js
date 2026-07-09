@@ -37,8 +37,35 @@ api.interceptors.response.use(
 export const login = (username, password) =>
   api.post('/auth/login', { username, password });
 
-export const register = (userData) =>
-  api.post('/auth/register', userData);
+// Registration is multipart: includes a required selfie image + gender
+export const register = ({ username, email, password, fullName, gender, selfie }) => {
+  const formData = new FormData();
+  formData.append('username', username);
+  formData.append('email', email);
+  formData.append('password', password);
+  if (fullName) formData.append('fullName', fullName);
+  formData.append('gender', gender);
+  formData.append('selfie', selfie);
+  return api.post('/auth/register', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+export const updateProfile = ({ gender, selfie }) => {
+  const formData = new FormData();
+  if (gender) formData.append('gender', gender);
+  if (selfie) formData.append('selfie', selfie);
+  return api.put('/auth/profile', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+// Trip membership endpoints
+export const inviteToTrip = (tripId, username) =>
+  api.post(`/trips/${tripId}/invite`, { username });
+export const getInvitations = () => api.get('/trips/invitations');
+export const respondToInvitation = (inviteId, accept) =>
+  api.post(`/trips/invitations/${inviteId}/respond`, { accept });
 
 // Trip endpoints
 export const getTrips = () => api.get('/trips');
@@ -55,9 +82,10 @@ export const deleteTripItem = (tripId, itemId) => api.delete(`/trips/${tripId}/i
 export const reorderTripItems = (tripId, items) => api.put(`/trips/${tripId}/items/reorder`, { items });
 
 // Photo endpoints
-export const uploadPhoto = (tripItemId, file) => {
+export const uploadPhoto = (tripItemId, file, caption) => {
   const formData = new FormData();
   formData.append('photo', file);
+  if (caption) formData.append('caption', caption);
   return api.post(`/photos/${tripItemId}`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
@@ -66,8 +94,9 @@ export const uploadPhoto = (tripItemId, file) => {
 export const getPhotos = (tripItemId) => api.get(`/photos/${tripItemId}`);
 export const deletePhoto = (photoId) => api.delete(`/photos/${photoId}`);
 
-// Google Places API proxy
+// Place search (Nominatim) + fun facts (Wikipedia), proxied by the server
 export const searchPlaces = (query) => api.get(`/places/search`, { params: { query } });
-export const getPlaceDetails = (placeId) => api.get(`/places/details/${placeId}`);
+export const getPlaceFunFact = ({ wikipedia, name, lat, lon }) =>
+  api.get(`/places/funfact`, { params: { wikipedia, name, lat, lon } });
 
 export default api;

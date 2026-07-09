@@ -4,9 +4,14 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// SSL on in production by default; DATABASE_SSL=disable|require overrides
+const useSSL = process.env.DATABASE_SSL
+  ? process.env.DATABASE_SSL !== 'disable'
+  : process.env.NODE_ENV === 'production';
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: useSSL ? { rejectUnauthorized: false } : false,
 });
 
 /**
@@ -40,6 +45,27 @@ export const initializeDatabase = async () => {
       )
     `);
     console.log('[DB] ✓ Users table created/verified');
+
+    // Profile fields for playback avatars (safe to re-run)
+    await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS selfie_url TEXT`);
+    await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS gender VARCHAR(20)`);
+    console.log('[DB] ✓ Users columns migrated');
+
+    // Trip membership: owners create rows with role 'owner'; invitations
+    // create 'member' rows that start as status 'pending'
+    await query(`
+      CREATE TABLE IF NOT EXISTS trip_members (
+        id VARCHAR(255) PRIMARY KEY,
+        trip_id VARCHAR(255) REFERENCES trips(id) ON DELETE CASCADE,
+        user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+        role VARCHAR(20) NOT NULL DEFAULT 'member',
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        invited_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (trip_id, user_id)
+      )
+    `);
+    console.log('[DB] ✓ Trip members table created/verified');
 
     // Trips table
     await query(`
@@ -82,6 +108,11 @@ export const initializeDatabase = async () => {
     `);
     console.log('[DB] ✓ Trip items table created/verified');
 
+    // Columns added after initial release (safe to re-run)
+    await query(`ALTER TABLE trip_items ADD COLUMN IF NOT EXISTS fun_facts TEXT`);
+    await query(`ALTER TABLE trip_items ADD COLUMN IF NOT EXISTS transport_mode VARCHAR(50)`);
+    console.log('[DB] ✓ Trip items columns migrated');
+
     // Photos table
     await query(`
       CREATE TABLE IF NOT EXISTS photos (
@@ -100,6 +131,8 @@ export const initializeDatabase = async () => {
     await query('CREATE INDEX IF NOT EXISTS idx_trip_items_trip_id ON trip_items(trip_id)');
     await query('CREATE INDEX IF NOT EXISTS idx_trip_items_order ON trip_items(trip_id, order_index)');
     await query('CREATE INDEX IF NOT EXISTS idx_photos_trip_item_id ON photos(trip_item_id)');
+    await query('CREATE INDEX IF NOT EXISTS idx_trip_members_user ON trip_members(user_id, status)');
+    await query('CREATE INDEX IF NOT EXISTS idx_trip_members_trip ON trip_members(trip_id, status)');
     console.log('[DB] ✓ Indexes created/verified');
 
     console.log('[DB] ✅ Database initialization complete');

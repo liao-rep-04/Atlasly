@@ -1,125 +1,167 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
-  MapPin,
-  Calendar,
-  DollarSign,
-  Plus,
-  List,
-  Map as MapIcon,
-  ArrowLeft,
-  Edit,
-  Trash2,
+  MapPin, Calendar, DollarSign, Plus, List, Map as MapIcon,
+  ArrowLeft, Play, X, UserPlus,
 } from 'lucide-react';
 import TripMap from '../components/TripMap';
+import StopForm from '../components/StopForm';
+import StopCard from '../components/StopCard';
+import TripPlayback from '../components/TripPlayback';
+import {
+  getTrip, createTripItem, updateTripItem, deleteTripItem,
+  reorderTripItems, uploadPhoto, deletePhoto, inviteToTrip,
+} from '../lib/api';
 
 const TripDetail = () => {
   const { id } = useParams();
   const [trip, setTrip] = useState(null);
+  const [members, setMembers] = useState([]);
   const [tripItems, setTripItems] = useState([]);
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteName, setInviteName] = useState('');
+  const [inviteStatus, setInviteStatus] = useState(null); // {ok, message}
+  const [loadError, setLoadError] = useState('');
   const [viewMode, setViewMode] = useState('split'); // 'split', 'list', 'map'
-  const [showAddItemForm, setShowAddItemForm] = useState(false);
-  const [newItem, setNewItem] = useState({
-    type: 'experience',
-    name: '',
-    description: '',
-    location_name: '',
-    latitude: '',
-    longitude: '',
-    cost: '',
-    date: '',
-    time: '',
-  });
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  const [pendingPin, setPendingPin] = useState(null);
+  const [playing, setPlaying] = useState(false);
 
-  // Mock data for demo - replace with API call
   useEffect(() => {
-    // Simulate API call
-    setTrip({
-      id: id,
-      name: 'Paris Adventure',
-      description: 'A wonderful trip to the City of Light',
-      start_date: '2026-06-01',
-      end_date: '2026-06-07',
-      status: 'planning',
-    });
-
-    setTripItems([
-      {
-        id: '1',
-        trip_id: id,
-        type: 'experience',
-        name: 'Eiffel Tower',
-        description: 'Visit the iconic Eiffel Tower',
-        location_name: 'Champ de Mars, Paris',
-        latitude: 48.8584,
-        longitude: 2.2945,
-        cost: 25,
-        date: '2026-06-02',
-        time: '10:00',
-        order_index: 0,
-      },
-      {
-        id: '2',
-        trip_id: id,
-        type: 'dining',
-        name: 'Le Jules Verne',
-        description: 'Fine dining at the Eiffel Tower',
-        location_name: 'Eiffel Tower, Avenue Gustave Eiffel',
-        latitude: 48.8583,
-        longitude: 2.294,
-        cost: 120,
-        date: '2026-06-02',
-        time: '12:30',
-        order_index: 1,
-      },
-      {
-        id: '3',
-        trip_id: id,
-        type: 'experience',
-        name: 'Louvre Museum',
-        description: 'Explore world-famous art and artifacts',
-        location_name: 'Rue de Rivoli, Paris',
-        latitude: 48.8606,
-        longitude: 2.3376,
-        cost: 18,
-        date: '2026-06-03',
-        time: '14:00',
-        order_index: 2,
-      },
-    ]);
+    const load = async () => {
+      try {
+        const res = await getTrip(id);
+        setTrip(res.data.trip);
+        setMembers(res.data.members || []);
+        setTripItems(res.data.items);
+      } catch (err) {
+        setLoadError(err.response?.data?.error || 'Failed to load trip');
+      }
+    };
+    load();
   }, [id]);
 
-  const handleAddItem = (e) => {
+  const formOpen = showAddForm || editingItem !== null;
+
+  // Map clicks drop a pin while the form is open; otherwise they open the form
+  const handleMapClick = useCallback(
+    (latlng) => {
+      setPendingPin(latlng);
+      setShowAddForm((open) => open || editingItem !== null ? open : true);
+    },
+    [editingItem]
+  );
+
+  const closeForm = () => {
+    setShowAddForm(false);
+    setEditingItem(null);
+    setPendingPin(null);
+  };
+
+  const handleAddItem = async (fields) => {
+    const res = await createTripItem(id, fields);
+    setTripItems((items) => [...items, res.data.item]);
+    closeForm();
+  };
+
+  const handleUpdateItem = async (fields) => {
+    const res = await updateTripItem(id, editingItem.id, fields);
+    setTripItems((items) =>
+      items.map((it) =>
+        it.id === editingItem.id ? { ...res.data.item, photos: it.photos } : it
+      )
+    );
+    closeForm();
+  };
+
+  const handleDeleteItem = async (item) => {
+    if (!window.confirm(`Remove "${item.name}" from the trip?`)) return;
+    await deleteTripItem(id, item.id);
+    setTripItems((items) => items.filter((it) => it.id !== item.id));
+  };
+
+  const handleMove = async (item, direction) => {
+    const sorted = [...tripItems].sort((a, b) => a.order_index - b.order_index);
+    const from = sorted.findIndex((it) => it.id === item.id);
+    const to = from + direction;
+    if (to < 0 || to >= sorted.length) return;
+    [sorted[from], sorted[to]] = [sorted[to], sorted[from]];
+    const reordered = sorted.map((it, i) => ({ ...it, order_index: i }));
+    setTripItems(reordered);
+    await reorderTripItems(
+      id,
+      reordered.map((it) => ({ id: it.id, order_index: it.order_index }))
+    );
+  };
+
+  const handleUploadPhoto = async (itemId, file) => {
+    try {
+      const res = await uploadPhoto(itemId, file);
+      setTripItems((items) =>
+        items.map((it) =>
+          it.id === itemId ? { ...it, photos: [...(it.photos || []), res.data.photo] } : it
+        )
+      );
+    } catch (err) {
+      alert(err.response?.data?.error || 'Photo upload failed');
+    }
+  };
+
+  const handleDeletePhoto = async (itemId, photoId) => {
+    await deletePhoto(photoId);
+    setTripItems((items) =>
+      items.map((it) =>
+        it.id === itemId
+          ? { ...it, photos: it.photos.filter((p) => p.id !== photoId) }
+          : it
+      )
+    );
+  };
+
+  const handleInvite = async (e) => {
     e.preventDefault();
-    const item = {
-      ...newItem,
-      id: Date.now().toString(),
-      trip_id: id,
-      order_index: tripItems.length,
-      latitude: parseFloat(newItem.latitude) || null,
-      longitude: parseFloat(newItem.longitude) || null,
-      cost: parseFloat(newItem.cost) || 0,
-    };
-    setTripItems([...tripItems, item]);
-    setShowAddItemForm(false);
-    setNewItem({
-      type: 'experience',
-      name: '',
-      description: '',
-      location_name: '',
-      latitude: '',
-      longitude: '',
-      cost: '',
-      date: '',
-      time: '',
-    });
+    setInviteStatus(null);
+    try {
+      const res = await inviteToTrip(id, inviteName);
+      setInviteStatus({ ok: true, message: `Invitation sent to ${res.data.invited}!` });
+      setInviteName('');
+    } catch (err) {
+      setInviteStatus({
+        ok: false,
+        message: err.response?.data?.error || 'Failed to send invitation',
+      });
+    }
   };
 
-  const handleDeleteItem = (itemId) => {
-    setTripItems(tripItems.filter((item) => item.id !== itemId));
-  };
+  // Stable identity matters: playback effects depend on this array
+  const acceptedMembers = useMemo(
+    () => members.filter((m) => m.status === 'owner' || m.status === 'accepted'),
+    [members]
+  );
 
-  const totalCost = tripItems.reduce((sum, item) => sum + (item.cost || 0), 0);
+  const sortedItems = [...tripItems].sort((a, b) => a.order_index - b.order_index);
+  const totalCost = tripItems.reduce((sum, item) => sum + (parseFloat(item.cost) || 0), 0);
+  // pg returns DECIMAL as strings; playback does arithmetic on these
+  const playableStops = sortedItems
+    .filter((it) => it.latitude != null && it.longitude != null)
+    .map((it) => ({
+      ...it,
+      latitude: parseFloat(it.latitude),
+      longitude: parseFloat(it.longitude),
+    }));
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-4xl mb-4">😕</div>
+          <p className="text-neutral-600 mb-4">{loadError}</p>
+          <Link to="/dashboard" className="btn-primary">Back to Dashboard</Link>
+        </div>
+      </div>
+    );
+  }
 
   if (!trip) {
     return (
@@ -182,189 +224,105 @@ const TripDetail = () => {
                 <p className="text-neutral-600 mb-3">{trip.description}</p>
               )}
               <div className="flex items-center gap-4 text-sm text-neutral-600">
-                <div className="flex items-center gap-1">
-                  <Calendar className="w-4 h-4" />
-                  <span>
-                    {new Date(trip.start_date).toLocaleDateString()} -{' '}
-                    {new Date(trip.end_date).toLocaleDateString()}
-                  </span>
-                </div>
+                {trip.start_date && (
+                  <div className="flex items-center gap-1">
+                    <Calendar className="w-4 h-4" />
+                    <span>
+                      {new Date(trip.start_date).toLocaleDateString()}
+                      {trip.end_date &&
+                        ` - ${new Date(trip.end_date).toLocaleDateString()}`}
+                    </span>
+                  </div>
+                )}
                 <div className="flex items-center gap-1">
                   <MapPin className="w-4 h-4" />
-                  <span>{tripItems.length} locations</span>
+                  <span>{tripItems.length} stops</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <DollarSign className="w-4 h-4" />
-                  <span>${totalCost.toFixed(2)} total</span>
+                {totalCost > 0 && (
+                  <div className="flex items-center gap-1">
+                    <DollarSign className="w-4 h-4" />
+                    <span>${totalCost.toFixed(2)} total</span>
+                  </div>
+                )}
+                {/* Traveler avatars */}
+                <div className="flex items-center">
+                  <div className="flex -space-x-2 mr-1">
+                    {acceptedMembers.slice(0, 5).map((m) => (
+                      <span key={m.id} title={m.username}>
+                        {m.selfie_url ? (
+                          <img
+                            src={m.selfie_url}
+                            alt={m.username}
+                            className="w-7 h-7 rounded-full object-cover border-2 border-white shadow"
+                          />
+                        ) : (
+                          <span className="w-7 h-7 rounded-full bg-neutral-300 border-2 border-white shadow flex items-center justify-center text-xs font-semibold text-white">
+                            {m.username[0].toUpperCase()}
+                          </span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                  {acceptedMembers.length > 1 && (
+                    <span className="text-xs text-neutral-500">
+                      {acceptedMembers.length} travelers
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
-            <button
-              className="btn-primary"
-              onClick={() => setShowAddItemForm(!showAddItemForm)}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Location
-            </button>
+            <div className="flex items-center gap-2">
+              {trip.is_owner && (
+                <button className="btn-outline" onClick={() => setShowInvite(true)}>
+                  <UserPlus className="w-4 h-4 mr-2" />
+                  Invite
+                </button>
+              )}
+              <button
+                className="btn-outline"
+                onClick={() => setPlaying(true)}
+                disabled={playableStops.length < 1}
+                title={
+                  playableStops.length < 1
+                    ? 'Add stops with locations to replay your trip'
+                    : 'Replay your journey'
+                }
+              >
+                <Play className="w-4 h-4 mr-2" />
+                Play Trip
+              </button>
+              <button
+                className="btn-primary"
+                onClick={() => (formOpen ? closeForm() : setShowAddForm(true))}
+              >
+                {formOpen ? (
+                  <X className="w-4 h-4 mr-2" />
+                ) : (
+                  <Plus className="w-4 h-4 mr-2" />
+                )}
+                {formOpen ? 'Close' : 'Add Stop'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Main content */}
       <div className="container-page py-6">
-        {/* Add item form */}
-        {showAddItemForm && (
-          <div className="card mb-6">
-            <h3 className="text-lg font-semibold mb-4">Add New Location</h3>
-            <form onSubmit={handleAddItem} className="space-y-4">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1">
-                    Type
-                  </label>
-                  <select
-                    className="input"
-                    value={newItem.type}
-                    onChange={(e) =>
-                      setNewItem({ ...newItem, type: e.target.value })
-                    }
-                    required
-                  >
-                    <option value="experience">Experience</option>
-                    <option value="dining">Dining</option>
-                    <option value="hotel">Hotel</option>
-                    <option value="transportation">Transportation</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1">
-                    Name *
-                  </label>
-                  <input
-                    type="text"
-                    className="input"
-                    value={newItem.name}
-                    onChange={(e) =>
-                      setNewItem({ ...newItem, name: e.target.value })
-                    }
-                    required
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-1">
-                  Description
-                </label>
-                <textarea
-                  className="input"
-                  rows="2"
-                  value={newItem.description}
-                  onChange={(e) =>
-                    setNewItem({ ...newItem, description: e.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-1">
-                  Location Name
-                </label>
-                <input
-                  type="text"
-                  className="input"
-                  placeholder="e.g., Eiffel Tower, Paris"
-                  value={newItem.location_name}
-                  onChange={(e) =>
-                    setNewItem({ ...newItem, location_name: e.target.value })
-                  }
-                />
-              </div>
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1">
-                    Latitude
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    className="input"
-                    placeholder="48.8584"
-                    value={newItem.latitude}
-                    onChange={(e) =>
-                      setNewItem({ ...newItem, latitude: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1">
-                    Longitude
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    className="input"
-                    placeholder="2.2945"
-                    value={newItem.longitude}
-                    onChange={(e) =>
-                      setNewItem({ ...newItem, longitude: e.target.value })
-                    }
-                  />
-                </div>
-              </div>
-              <div className="grid md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1">
-                    Cost ($)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="input"
-                    value={newItem.cost}
-                    onChange={(e) =>
-                      setNewItem({ ...newItem, cost: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1">
-                    Date
-                  </label>
-                  <input
-                    type="date"
-                    className="input"
-                    value={newItem.date}
-                    onChange={(e) =>
-                      setNewItem({ ...newItem, date: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1">
-                    Time
-                  </label>
-                  <input
-                    type="time"
-                    className="input"
-                    value={newItem.time}
-                    onChange={(e) =>
-                      setNewItem({ ...newItem, time: e.target.value })
-                    }
-                  />
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button type="submit" className="btn-primary">
-                  Add Location
-                </button>
-                <button
-                  type="button"
-                  className="btn-outline"
-                  onClick={() => setShowAddItemForm(false)}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
+        {/* Add / edit stop form */}
+        {formOpen && (
+          <div className="card mb-6 border-2 border-primary-200">
+            <h3 className="text-lg font-semibold mb-4">
+              {editingItem ? `Edit "${editingItem.name}"` : 'Add a Stop'}
+            </h3>
+            <StopForm
+              key={editingItem?.id || 'new'}
+              item={editingItem}
+              pendingPin={pendingPin}
+              isFirstStop={!editingItem && tripItems.length === 0}
+              onSubmit={editingItem ? handleUpdateItem : handleAddItem}
+              onCancel={closeForm}
+            />
           </div>
         )}
 
@@ -379,78 +337,39 @@ const TripDetail = () => {
             <div>
               <h2 className="text-xl font-semibold mb-4">Itinerary</h2>
               <div className="space-y-3">
-                {tripItems.length === 0 ? (
+                {sortedItems.length === 0 ? (
                   <div className="card text-center py-12">
                     <div className="text-4xl mb-4">📍</div>
                     <h3 className="text-lg font-semibold text-neutral-900 mb-2">
-                      No locations yet
+                      No stops yet
                     </h3>
                     <p className="text-neutral-600 mb-4">
-                      Add your first location to start planning
+                      Search for a place or click the map to drop your first pin
                     </p>
-                    <button
-                      className="btn-primary"
-                      onClick={() => setShowAddItemForm(true)}
-                    >
+                    <button className="btn-primary" onClick={() => setShowAddForm(true)}>
                       <Plus className="w-4 h-4 mr-2" />
-                      Add Location
+                      Add Stop
                     </button>
                   </div>
                 ) : (
-                  tripItems.map((item, index) => (
-                    <div key={item.id} className="card hover:shadow-lg transition-shadow">
-                      <div className="flex items-start gap-4">
-                        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-primary-500 to-secondary-600 flex items-center justify-center text-white font-semibold">
-                          {index + 1}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-start justify-between mb-2">
-                            <div>
-                              <h3 className="font-semibold text-neutral-900">
-                                {item.name}
-                              </h3>
-                              <p className="text-sm text-neutral-600 capitalize">
-                                {item.type}
-                              </p>
-                            </div>
-                            <div className="flex gap-1">
-                              <button className="p-2 text-neutral-400 hover:text-primary-600">
-                                <Edit className="w-4 h-4" />
-                              </button>
-                              <button
-                                className="p-2 text-neutral-400 hover:text-red-600"
-                                onClick={() => handleDeleteItem(item.id)}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                          {item.description && (
-                            <p className="text-sm text-neutral-600 mb-2">
-                              {item.description}
-                            </p>
-                          )}
-                          {item.location_name && (
-                            <p className="text-sm text-neutral-500 mb-2">
-                              📍 {item.location_name}
-                            </p>
-                          )}
-                          <div className="flex items-center gap-4 text-sm text-neutral-600">
-                            {item.date && (
-                              <span>
-                                📅 {new Date(item.date).toLocaleDateString()}
-                              </span>
-                            )}
-                            {item.time && <span>⏰ {item.time}</span>}
-                            {item.cost > 0 && (
-                              <span className="font-semibold text-primary-600">
-                                💰 ${item.cost.toFixed(2)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                  sortedItems.map((item, index) => (
+                    <StopCard
+                      key={item.id}
+                      item={item}
+                      index={index}
+                      isFirst={index === 0}
+                      isLast={index === sortedItems.length - 1}
+                      onEdit={(it) => {
+                        setEditingItem(it);
+                        setShowAddForm(false);
+                        setPendingPin(null);
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      onDelete={handleDeleteItem}
+                      onMove={handleMove}
+                      onUploadPhoto={handleUploadPhoto}
+                      onDeletePhoto={handleDeletePhoto}
+                    />
                   ))
                 )}
               </div>
@@ -460,18 +379,94 @@ const TripDetail = () => {
           {/* Map view */}
           {(viewMode === 'map' || viewMode === 'split') && (
             <div>
-              <h2 className="text-xl font-semibold mb-4">Map View</h2>
+              <h2 className="text-xl font-semibold mb-4 flex items-center justify-between">
+                Map View
+                {formOpen && (
+                  <span className="text-sm font-normal text-amber-600">
+                    Click the map to place this stop 📍
+                  </span>
+                )}
+              </h2>
               <div
                 className={`${
                   viewMode === 'map' ? 'h-[calc(100vh-280px)]' : 'h-[600px]'
-                }`}
+                } sticky top-40`}
               >
-                <TripMap tripItems={tripItems} />
+                <TripMap
+                  tripItems={tripItems}
+                  onMapClick={handleMapClick}
+                  draftPin={formOpen ? pendingPin : null}
+                />
               </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* Invite modal */}
+      {showInvite && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Invite a Traveler</h3>
+              <button
+                className="p-1 text-neutral-400 hover:text-neutral-700"
+                onClick={() => {
+                  setShowInvite(false);
+                  setInviteStatus(null);
+                }}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {inviteStatus && (
+              <div
+                className={`mb-4 p-3 rounded-lg text-sm border ${
+                  inviteStatus.ok
+                    ? 'bg-green-50 border-green-200 text-green-700'
+                    : 'bg-red-50 border-red-200 text-red-700'
+                }`}
+              >
+                {inviteStatus.message}
+              </div>
+            )}
+            <form onSubmit={handleInvite} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1">
+                  Username or email
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="friend@example.com"
+                  value={inviteName}
+                  onChange={(e) => setInviteName(e.target.value)}
+                  required
+                  autoFocus
+                />
+                <p className="mt-1 text-xs text-neutral-500">
+                  They'll see the invitation on their dashboard and can add
+                  stops and photos once they join.
+                </p>
+              </div>
+              <button type="submit" className="btn-primary w-full">
+                <UserPlus className="w-4 h-4 mr-2" />
+                Send Invitation
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Playback overlay */}
+      {playing && (
+        <TripPlayback
+          trip={trip}
+          stops={playableStops}
+          travelers={acceptedMembers}
+          onClose={() => setPlaying(false)}
+        />
+      )}
     </div>
   );
 };

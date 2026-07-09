@@ -9,19 +9,37 @@ const app = express();
 app.use(express.json());
 app.use('/api/auth', authRoutes);
 
+
+// Registration is multipart (selfie required); this builds a valid request
+const SELFIE = Buffer.from(
+  '89504e470d0a1a0a0000000d4948445200000001000000010806000000' +
+  '1f15c4890000000d49444154789c63f8cfc0f01f0005050200' +
+  '9a1c1ca20000000049454e44ae426082',
+  'hex'
+);
+
+const registerRequest = (fields, { selfie = true } = {}) => {
+  let req = request(app).post('/api/auth/register');
+  for (const [key, value] of Object.entries(fields)) {
+    req = req.field(key, value);
+  }
+  if (selfie) req = req.attach('selfie', SELFIE, 'selfie.png');
+  return req;
+};
+
 describe('Auth Routes', () => {
   beforeAll(async () => {
     console.log('[TEST SETUP] Initializing database...');
     await initializeDatabase();
 
     // Clean up test users
-    await query("DELETE FROM users WHERE username LIKE 'testuser%'");
+    await query("DELETE FROM users WHERE username LIKE 'testuser%' OR username = 'logintest'");
     console.log('[TEST SETUP] ✓ Database ready for testing');
   });
 
   afterAll(async () => {
     console.log('[TEST CLEANUP] Cleaning up test data...');
-    await query("DELETE FROM users WHERE username LIKE 'testuser%'");
+    await query("DELETE FROM users WHERE username LIKE 'testuser%' OR username = 'logintest'");
     console.log('[TEST CLEANUP] ✓ Cleanup complete');
   });
 
@@ -34,12 +52,10 @@ describe('Auth Routes', () => {
         email: 'testuser1@example.com',
         password: 'TestPass123',
         fullName: 'Test User One',
+        gender: 'other',
       };
 
-      const response = await request(app)
-        .post('/api/auth/register')
-        .send(userData)
-        .expect(201);
+      const response = await registerRequest(userData).expect(201);
 
       expect(response.body.token).toBeDefined();
       expect(response.body.user).toBeDefined();
@@ -53,10 +69,7 @@ describe('Auth Routes', () => {
     it('should reject registration with missing fields', async () => {
       console.log('[TEST] Starting: should reject missing fields');
 
-      const response = await request(app)
-        .post('/api/auth/register')
-        .send({ username: 'testuser2' })
-        .expect(400);
+      const response = await registerRequest({ username: 'testuser2' }).expect(400);
 
       expect(response.body.error).toBeDefined();
 
@@ -66,14 +79,12 @@ describe('Auth Routes', () => {
     it('should reject registration with invalid email', async () => {
       console.log('[TEST] Starting: should reject invalid email');
 
-      const response = await request(app)
-        .post('/api/auth/register')
-        .send({
-          username: 'testuser3',
-          email: 'invalid-email',
-          password: 'TestPass123',
-        })
-        .expect(400);
+      const response = await registerRequest({
+        username: 'testuser3',
+        email: 'invalid-email',
+        password: 'TestPass123',
+        gender: 'other',
+      }).expect(400);
 
       expect(response.body.error).toContain('email');
 
@@ -83,14 +94,12 @@ describe('Auth Routes', () => {
     it('should reject registration with weak password', async () => {
       console.log('[TEST] Starting: should reject weak password');
 
-      const response = await request(app)
-        .post('/api/auth/register')
-        .send({
-          username: 'testuser4',
-          email: 'testuser4@example.com',
-          password: 'weak',
-        })
-        .expect(400);
+      const response = await registerRequest({
+        username: 'testuser4',
+        email: 'testuser4@example.com',
+        password: 'weak',
+        gender: 'other',
+      }).expect(400);
 
       expect(response.body.error).toBeDefined();
       expect(response.body.details).toBeDefined();
@@ -98,28 +107,48 @@ describe('Auth Routes', () => {
       console.log('[TEST] ✅ PASS: Weak password rejected');
     });
 
+    it('should reject registration without a selfie', async () => {
+      const response = await registerRequest(
+        {
+          username: 'testuser6',
+          email: 'testuser6@example.com',
+          password: 'TestPass123',
+          gender: 'other',
+        },
+        { selfie: false }
+      ).expect(400);
+
+      expect(response.body.error).toContain('selfie');
+    });
+
+    it('should reject registration without a gender', async () => {
+      const response = await registerRequest({
+        username: 'testuser7',
+        email: 'testuser7@example.com',
+        password: 'TestPass123',
+      }).expect(400);
+
+      expect(response.body.error).toContain('Gender');
+    });
+
     it('should reject duplicate username', async () => {
       console.log('[TEST] Starting: should reject duplicate username');
 
       // First registration
-      await request(app)
-        .post('/api/auth/register')
-        .send({
-          username: 'testuser5',
-          email: 'testuser5@example.com',
-          password: 'TestPass123',
-        })
-        .expect(201);
+      await registerRequest({
+        username: 'testuser5',
+        email: 'testuser5@example.com',
+        password: 'TestPass123',
+        gender: 'female',
+      }).expect(201);
 
       // Duplicate registration
-      const response = await request(app)
-        .post('/api/auth/register')
-        .send({
-          username: 'testuser5',
-          email: 'different@example.com',
-          password: 'TestPass123',
-        })
-        .expect(409);
+      const response = await registerRequest({
+        username: 'testuser5',
+        email: 'different@example.com',
+        password: 'TestPass123',
+        gender: 'male',
+      }).expect(409);
 
       expect(response.body.error).toContain('already exists');
 
@@ -131,13 +160,12 @@ describe('Auth Routes', () => {
     beforeAll(async () => {
       console.log('[TEST SETUP] Creating test user for login tests...');
 
-      await request(app)
-        .post('/api/auth/register')
-        .send({
-          username: 'logintest',
-          email: 'logintest@example.com',
-          password: 'TestPass123',
-        });
+      await registerRequest({
+        username: 'logintest',
+        email: 'logintest@example.com',
+        password: 'TestPass123',
+        gender: 'other',
+      });
 
       console.log('[TEST SETUP] ✓ Login test user created');
     });

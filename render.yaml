@@ -1,0 +1,40 @@
+# Render Blueprint for Atlasly
+# Deploy: Render Dashboard → New → Blueprint → select this repo.
+# One web service (Express API + built React client) + managed Postgres.
+
+services:
+  - type: web
+    name: atlasly
+    runtime: node
+    plan: starter # required for the persistent disk below; photos live there
+    buildCommand: cd server && npm ci && cd ../client && npm ci && npm run build
+    startCommand: cd server && node index.js
+    healthCheckPath: /health
+    # Uploaded photos/selfies must survive deploys and restarts
+    disk:
+      name: atlasly-uploads
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: '20'
+      - key: DATABASE_URL
+        fromDatabase:
+          name: atlasly-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true # Render generates a strong random value
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
+      - key: MAX_FILE_SIZE
+        value: '5242880'
+      - key: ANTHROPIC_API_KEY
+        sync: false # set manually in the dashboard — never commit the key
+
+databases:
+  - name: atlasly-db
+    plan: free # upgrade to a paid plan for durability before real users
