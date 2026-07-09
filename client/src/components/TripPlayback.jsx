@@ -7,9 +7,16 @@ import {
 } from 'lucide-react';
 import { transportEmoji } from '../lib/tripConstants';
 
+// Base timings at "Fast"; Medium/Slow stretch everything by the multiplier
 const STOP_DWELL_MS = 6000; // how long we linger at each stop
 const PHOTO_CYCLE_MS = 2500;
 const TRAVEL_BASE_MS = 3000;
+
+const SPEED_OPTIONS = [
+  { value: 'slow', label: 'Slow', multiplier: 4 },
+  { value: 'medium', label: 'Medium', multiplier: 2 },
+  { value: 'fast', label: 'Fast', multiplier: 1 },
+];
 
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 
@@ -175,7 +182,7 @@ const stopPartyIcon = (travelers) => {
  * Imperative animation driver living inside the map. Handles camera moves
  * for the current phase and, during travel, moves the party along the arc.
  */
-const PlaybackEngine = ({ stops, travelers, index, phase, pausedRef, onTravelEnd }) => {
+const PlaybackEngine = ({ stops, travelers, index, phase, pausedRef, speedRef, onTravelEnd }) => {
   const map = useMap();
   const rafRef = useRef(null);
 
@@ -215,9 +222,11 @@ const PlaybackEngine = ({ stops, travelers, index, phase, pausedRef, onTravelEnd
       color: '#ef4444', weight: 3, opacity: 0.9,
     }).addTo(map);
 
-    // Longer legs travel a bit longer, capped so oceans don't take forever
+    // Longer legs travel a bit longer, capped so oceans don't take forever;
+    // speed multiplier read at takeoff (mid-flight changes apply next leg)
     const distance = map.distance(a, b);
-    const duration = TRAVEL_BASE_MS + Math.min(2500, distance / 2000);
+    const duration =
+      (TRAVEL_BASE_MS + Math.min(2500, distance / 2000)) * speedRef.current;
 
     let elapsed = 0;
     let last = null;
@@ -248,7 +257,7 @@ const PlaybackEngine = ({ stops, travelers, index, phase, pausedRef, onTravelEnd
       marker.remove();
       trail.remove();
     };
-  }, [phase, index, map, stops, travelers, pausedRef, onTravelEnd]);
+  }, [phase, index, map, stops, travelers, pausedRef, speedRef, onTravelEnd]);
 
   return null;
 };
@@ -263,8 +272,13 @@ const TripPlayback = ({ trip, stops, travelers = [], onClose }) => {
   const [phase, setPhase] = useState('stop'); // 'stop' | 'travel' | 'done'
   const [paused, setPaused] = useState(false);
   const [photoIdx, setPhotoIdx] = useState(0);
+  const [speed, setSpeed] = useState('medium');
   const pausedRef = useRef(false);
   pausedRef.current = paused;
+  const multiplier =
+    SPEED_OPTIONS.find((s) => s.value === speed)?.multiplier ?? 2;
+  const speedRef = useRef(multiplier);
+  speedRef.current = multiplier;
 
   const stop = stops[Math.min(index, stops.length - 1)];
   const nextStop = stops[index + 1];
@@ -304,9 +318,9 @@ const TripPlayback = ({ trip, stops, travelers = [], onClose }) => {
       } else {
         setPhase('travel');
       }
-    }, STOP_DWELL_MS);
+    }, STOP_DWELL_MS * multiplier);
     return () => clearTimeout(timer);
-  }, [phase, paused, index, stops.length]);
+  }, [phase, paused, index, stops.length, multiplier]);
 
   // Cycle photos while lingering
   useEffect(() => {
@@ -314,10 +328,10 @@ const TripPlayback = ({ trip, stops, travelers = [], onClose }) => {
     if (photos.length < 2) return;
     const timer = setInterval(
       () => !pausedRef.current && setPhotoIdx((i) => (i + 1) % photos.length),
-      PHOTO_CYCLE_MS
+      PHOTO_CYCLE_MS * multiplier
     );
     return () => clearInterval(timer);
-  }, [index, photos.length]);
+  }, [index, photos.length, multiplier]);
 
   // Must be referentially stable: it's a dependency of the travel-animation
   // effect, and an unstable identity restarts the flight on every re-render
@@ -450,18 +464,35 @@ const TripPlayback = ({ trip, stops, travelers = [], onClose }) => {
           )}
         </div>
 
-        {/* Progress dots */}
-        <div className="px-5 py-3 border-t border-neutral-200 flex items-center justify-center gap-1.5 flex-shrink-0">
-          {stops.map((s, i) => (
-            <button
-              key={s.id}
-              className={`rounded-full transition-all ${
-                i === index ? 'w-6 h-2 bg-primary-500' : 'w-2 h-2 bg-neutral-300 hover:bg-neutral-400'
-              }`}
-              onClick={() => goTo(i)}
-              title={s.name}
-            />
-          ))}
+        {/* Progress dots + speed */}
+        <div className="px-4 py-2.5 border-t border-neutral-200 flex items-center justify-between gap-3 flex-shrink-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {stops.map((s, i) => (
+              <button
+                key={s.id}
+                className={`rounded-full transition-all ${
+                  i === index ? 'w-6 h-2 bg-primary-500' : 'w-2 h-2 bg-neutral-300 hover:bg-neutral-400'
+                }`}
+                onClick={() => goTo(i)}
+                title={s.name}
+              />
+            ))}
+          </div>
+          <div className="flex items-center bg-neutral-100 rounded-full p-0.5 flex-shrink-0">
+            {SPEED_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                className={`text-[11px] font-medium rounded-full px-2.5 py-1 transition-colors ${
+                  speed === option.value
+                    ? 'bg-white text-neutral-900 shadow-sm'
+                    : 'text-neutral-500 hover:text-neutral-800'
+                }`}
+                onClick={() => setSpeed(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -497,6 +528,7 @@ const TripPlayback = ({ trip, stops, travelers = [], onClose }) => {
             index={index}
             phase={phase}
             pausedRef={pausedRef}
+            speedRef={speedRef}
             onTravelEnd={handleTravelEnd}
           />
         </MapContainer>
