@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
-import { Plus, MapPin, Calendar, Camera, Trash2, X, Users, Mail } from 'lucide-react';
+import { Plus, MapPin, Calendar, Camera, Trash2, X, Users, Mail, Pencil } from 'lucide-react';
 import { getTrips, createTrip, deleteTrip, getInvitations, respondToInvitation } from '../lib/api';
 import CompleteProfileModal from '../components/CompleteProfileModal';
 
@@ -17,6 +17,7 @@ const Dashboard = () => {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [creating, setCreating] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
 
   const profileIncomplete = user && (!user.selfieUrl || !user.gender);
 
@@ -92,8 +93,11 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      {/* Legacy accounts must add a selfie + avatar style before continuing */}
+      {/* Legacy accounts must add a photo + avatar style before continuing */}
       {profileIncomplete && <CompleteProfileModal />}
+      {!profileIncomplete && editingProfile && (
+        <CompleteProfileModal onClose={() => setEditingProfile(false)} />
+      )}
 
       {/* Header */}
       <header className="bg-white shadow-sm border-b border-neutral-200">
@@ -106,6 +110,26 @@ const Dashboard = () => {
               <span className="hidden sm:inline text-sm text-neutral-600">
                 Welcome, {user?.fullName || user?.username}!
               </span>
+              <button
+                onClick={() => setEditingProfile(true)}
+                className="relative group rounded-full flex-shrink-0"
+                title="Edit your avatar"
+              >
+                {user?.selfieUrl ? (
+                  <img
+                    src={user.selfieUrl}
+                    alt="Your avatar"
+                    className="w-9 h-9 rounded-full object-cover ring-2 ring-primary-200 group-hover:ring-primary-400 transition-shadow"
+                  />
+                ) : (
+                  <span className="w-9 h-9 rounded-full bg-neutral-200 flex items-center justify-center text-sm font-semibold text-neutral-600 ring-2 ring-primary-200">
+                    {(user?.username || '?')[0].toUpperCase()}
+                  </span>
+                )}
+                <span className="absolute -bottom-0.5 -right-0.5 bg-white rounded-full p-0.5 shadow ring-1 ring-neutral-200">
+                  <Pencil className="w-2.5 h-2.5 text-neutral-500" />
+                </span>
+              </button>
               <button onClick={handleLogout} className="btn-outline">
                 Sign Out
               </button>

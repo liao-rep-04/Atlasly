@@ -46,7 +46,7 @@ router.post('/register', imageUpload.single('selfie'), async (req, res) => {
 
     if (!req.file) {
       console.log('[Auth Route] ✗ Missing selfie');
-      return res.status(400).json({ error: 'A selfie is required (head and shoulders)' });
+      return res.status(400).json({ error: 'A profile photo is required' });
     }
 
     if (!GENDERS.includes(gender)) {

@@ -36,7 +36,7 @@ const Register = () => {
     }
 
     if (!selfie) {
-      setError('Please add a selfie — it becomes your travel avatar');
+      setError('Please add a photo — it becomes your travel avatar');
       return;
     }
 
