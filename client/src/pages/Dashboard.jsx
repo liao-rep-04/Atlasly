@@ -102,8 +102,8 @@ const Dashboard = () => {
             <h1 className="text-2xl font-display font-bold text-primary-600">
               Atlasly
             </h1>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-neutral-600">
+            <div className="flex items-center gap-2 sm:gap-4">
+              <span className="hidden sm:inline text-sm text-neutral-600">
                 Welcome, {user?.fullName || user?.username}!
               </span>
               <button onClick={handleLogout} className="btn-outline">

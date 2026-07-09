@@ -185,7 +185,8 @@ const TripDetail = () => {
               className="flex items-center gap-2 text-neutral-600 hover:text-neutral-900"
             >
               <ArrowLeft className="w-5 h-5" />
-              <span>Back to Dashboard</span>
+              <span className="hidden sm:inline">Back to Dashboard</span>
+              <span className="sm:hidden">Back</span>
             </Link>
             <div className="flex items-center gap-2">
               <button
@@ -215,15 +216,17 @@ const TripDetail = () => {
               </button>
             </div>
           </div>
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-3xl font-display font-bold text-neutral-900 mb-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h1 className="text-2xl sm:text-3xl font-display font-bold text-neutral-900 mb-1 sm:mb-2">
                 {trip.name}
               </h1>
               {trip.description && (
-                <p className="text-neutral-600 mb-3">{trip.description}</p>
+                <p className="text-neutral-600 mb-2 sm:mb-3 text-sm sm:text-base">
+                  {trip.description}
+                </p>
               )}
-              <div className="flex items-center gap-4 text-sm text-neutral-600">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-neutral-600">
                 {trip.start_date && (
                   <div className="flex items-center gap-1">
                     <Calendar className="w-4 h-4" />
@@ -271,7 +274,7 @@ const TripDetail = () => {
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
               {trip.is_owner && (
                 <button className="btn-outline" onClick={() => setShowInvite(true)}>
                   <UserPlus className="w-4 h-4 mr-2" />
@@ -376,9 +379,9 @@ const TripDetail = () => {
             </div>
           )}
 
-          {/* Map view */}
+          {/* Map view — first on mobile so it sits next to the add-stop form */}
           {(viewMode === 'map' || viewMode === 'split') && (
-            <div>
+            <div className="order-first md:order-none">
               <h2 className="text-xl font-semibold mb-4 flex items-center justify-between">
                 Map View
                 {formOpen && (
@@ -389,8 +392,10 @@ const TripDetail = () => {
               </h2>
               <div
                 className={`${
-                  viewMode === 'map' ? 'h-[calc(100vh-280px)]' : 'h-[600px]'
-                } sticky top-40`}
+                  viewMode === 'map'
+                    ? 'h-[60vh] md:h-[calc(100vh-280px)]'
+                    : 'h-[45vh] md:h-[600px]'
+                } md:sticky md:top-40`}
               >
                 <TripMap
                   tripItems={tripItems}

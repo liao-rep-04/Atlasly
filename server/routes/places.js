@@ -6,10 +6,67 @@ const router = express.Router();
 
 router.use(authenticate);
 
+const GEO_HEADERS = {
+  'User-Agent': 'Atlasly/1.0 (https://atlasly.onrender.com)',
+};
+
+// Primary geocoder. The public instance blocks many cloud-provider IPs,
+// so production traffic often lands on the Photon fallback below.
+const searchNominatim = async (q) => {
+  const url = new URL('https://nominatim.openstreetmap.org/search');
+  url.searchParams.set('q', q);
+  url.searchParams.set('format', 'jsonv2');
+  url.searchParams.set('limit', '5');
+  url.searchParams.set('addressdetails', '1');
+  url.searchParams.set('accept-language', 'en'); // English names for stops
+  url.searchParams.set('extratags', '1'); // carries the wikipedia article tag
+
+  const response = await fetch(url, { headers: GEO_HEADERS, signal: AbortSignal.timeout(6000) });
+  if (!response.ok) throw new Error(`Nominatim responded ${response.status}`);
+  const data = await response.json();
+  return data.map((place) => ({
+    place_id: String(place.place_id),
+    name: place.name || place.display_name.split(',')[0],
+    display_name: place.display_name,
+    latitude: parseFloat(place.lat),
+    longitude: parseFloat(place.lon),
+    type: place.type,
+    wikipedia: place.extratags?.wikipedia || null,
+  }));
+};
+
+// Fallback geocoder: Photon (komoot) — free OSM geocoder, no key,
+// tolerant of cloud IPs. No wikipedia tags, so fun facts use name+coords.
+const searchPhoton = async (q) => {
+  const url = new URL('https://photon.komoot.io/api/');
+  url.searchParams.set('q', q);
+  url.searchParams.set('limit', '5');
+  url.searchParams.set('lang', 'en'); // also gives much better relevance ranking
+
+  const response = await fetch(url, { headers: GEO_HEADERS, signal: AbortSignal.timeout(6000) });
+  if (!response.ok) throw new Error(`Photon responded ${response.status}`);
+  const data = await response.json();
+  return (data.features || [])
+    .filter((f) => f.geometry?.coordinates && f.properties?.name)
+    .map((f) => {
+      const p = f.properties;
+      const displayParts = [p.name, p.street, p.city, p.state, p.country].filter(Boolean);
+      return {
+        place_id: `${p.osm_type || 'X'}${p.osm_id}`,
+        name: p.name,
+        display_name: [...new Set(displayParts)].join(', '),
+        latitude: f.geometry.coordinates[1],
+        longitude: f.geometry.coordinates[0],
+        type: p.osm_value || null,
+        wikipedia: null,
+      };
+    });
+};
+
 /**
  * GET /api/places/search?query=...
- * Geocode a place name via OpenStreetMap Nominatim (free, no API key).
- * Proxied server-side so the browser isn't subject to Nominatim CORS/rate rules.
+ * Geocode a place name (free OSM services, no API key). Proxied server-side;
+ * tries Nominatim first, then Photon when Nominatim is unavailable.
  */
 router.get('/search', async (req, res) => {
   try {
@@ -18,32 +75,20 @@ router.get('/search', async (req, res) => {
       return res.status(400).json({ error: 'query parameter is required' });
     }
 
-    const url = new URL('https://nominatim.openstreetmap.org/search');
-    url.searchParams.set('q', q.trim());
-    url.searchParams.set('format', 'jsonv2');
-    url.searchParams.set('limit', '5');
-    url.searchParams.set('addressdetails', '1');
-    url.searchParams.set('extratags', '1'); // carries the wikipedia article tag
+    const providers =
+      process.env.PLACES_PROVIDER === 'photon'
+        ? [searchPhoton] // test/override hook
+        : [searchNominatim, searchPhoton];
 
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Atlasly-TripPlanner/1.0 (contact: dev@atlasly.local)' },
-    });
-    if (!response.ok) {
-      console.error(`[Places Route] ✗ Nominatim responded ${response.status}`);
-      return res.status(502).json({ error: 'Place search service unavailable' });
+    for (const provider of providers) {
+      try {
+        const results = await provider(q.trim());
+        return res.json({ results });
+      } catch (error) {
+        console.error(`[Places Route] ✗ ${provider.name} failed:`, error.message);
+      }
     }
-
-    const data = await response.json();
-    const results = data.map((place) => ({
-      place_id: String(place.place_id),
-      name: place.name || place.display_name.split(',')[0],
-      display_name: place.display_name,
-      latitude: parseFloat(place.lat),
-      longitude: parseFloat(place.lon),
-      type: place.type,
-      wikipedia: place.extratags?.wikipedia || null,
-    }));
-    res.json({ results });
+    res.status(502).json({ error: 'Place search service unavailable' });
   } catch (error) {
     console.error('[Places Route] ❌ Search error:', error);
     res.status(500).json({ error: 'Internal server error' });
