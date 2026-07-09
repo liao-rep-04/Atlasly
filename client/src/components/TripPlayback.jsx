@@ -4,6 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
   X, Pause, Play, SkipBack, SkipForward, Sparkles, RotateCcw, MapPin,
+  Volume2, VolumeX,
 } from 'lucide-react';
 import { transportEmoji } from '../lib/tripConstants';
 
@@ -273,6 +274,8 @@ const TripPlayback = ({ trip, stops, travelers = [], onClose }) => {
   const [paused, setPaused] = useState(false);
   const [photoIdx, setPhotoIdx] = useState(0);
   const [speed, setSpeed] = useState('medium');
+  const [muted, setMuted] = useState(false);
+  const audioRef = useRef(null);
   const pausedRef = useRef(false);
   pausedRef.current = paused;
   const multiplier =
@@ -297,6 +300,31 @@ const TripPlayback = ({ trip, stops, travelers = [], onClose }) => {
         ),
     [stops]
   );
+
+  // Ambience: starts with playback (opening it is a user gesture, so
+  // autoplay is allowed); if the browser still blocks it, start muted
+  useEffect(() => {
+    const audio = new Audio('/audio/adventure-ambience.mp3');
+    audio.loop = true;
+    audio.volume = 0.35;
+    audioRef.current = audio;
+    let disposed = false; // unmount aborts play() — that's not an autoplay block
+    audio.play().catch(() => {
+      if (!disposed) setMuted(true);
+    });
+    return () => {
+      disposed = true;
+      audio.pause();
+      audioRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.muted = muted;
+    if (!muted && audio.paused) audio.play().catch(() => {});
+  }, [muted]);
 
   // Escape closes; lock body scroll while open
   useEffect(() => {
@@ -379,6 +407,13 @@ const TripPlayback = ({ trip, stops, travelers = [], onClose }) => {
               title={paused ? 'Resume' : 'Pause'}
             >
               {paused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+            </button>
+            <button
+              className="p-2 rounded-full text-neutral-500 hover:bg-neutral-100"
+              onClick={() => setMuted(!muted)}
+              title={muted ? 'Unmute music' : 'Mute music'}
+            >
+              {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </button>
             <button
               className="p-2 rounded-full text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"
@@ -494,6 +529,11 @@ const TripPlayback = ({ trip, stops, travelers = [], onClose }) => {
             ))}
           </div>
         </div>
+
+        {/* CC-BY attribution for the bundled ambience track */}
+        <p className="px-4 pb-2 text-[10px] text-neutral-400 flex-shrink-0">
+          Music: "Adventure Meme" — Kevin MacLeod (incompetech.com), CC BY 4.0
+        </p>
       </div>
 
       {/* Map — unobstructed */}
