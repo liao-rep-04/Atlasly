@@ -7,6 +7,103 @@ import CompleteProfileModal from '../components/CompleteProfileModal';
 
 const emptyForm = { name: '', description: '', start_date: '', end_date: '' };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const today = () => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
+// Status is derived from dates — no manual bookkeeping:
+// upcoming (starts later), ongoing (today within range),
+// completed (ended), planning (no dates yet)
+const classifyTrip = (trip) => {
+  const now = today();
+  const start = trip.start_date ? new Date(trip.start_date) : null;
+  const end = trip.end_date ? new Date(trip.end_date) : start;
+  if (start && start > now) return 'upcoming';
+  if (start && end && start <= now && now <= end) return 'ongoing';
+  if (end && end < now) return 'completed';
+  return 'planning';
+};
+
+const daysUntil = (trip) =>
+  Math.max(1, Math.ceil((new Date(trip.start_date) - today()) / DAY_MS));
+
+const TRIP_SECTIONS = [
+  { key: 'ongoing', title: '🌍 Happening Now' },
+  { key: 'upcoming', title: 'Upcoming' },
+  { key: 'planning', title: 'In Planning' },
+  { key: 'completed', title: 'Past Trips' },
+];
+
+const STATUS_BADGES = {
+  ongoing: { label: 'Happening now', cls: 'bg-green-100 text-green-700' },
+  upcoming: { label: 'Upcoming', cls: 'bg-secondary-100 text-secondary-700' },
+  planning: { label: 'Planning', cls: 'bg-amber-100 text-amber-700' },
+  completed: { label: 'Completed', cls: 'bg-neutral-100 text-neutral-500' },
+};
+
+const formatDateRange = (trip) => {
+  if (!trip.start_date) return 'No dates set';
+  const start = new Date(trip.start_date).toLocaleDateString();
+  if (!trip.end_date) return start;
+  return `${start} – ${new Date(trip.end_date).toLocaleDateString()}`;
+};
+
+const TripCard = ({ trip, onDelete }) => {
+  const status = classifyTrip(trip);
+  const badge = STATUS_BADGES[status];
+  return (
+    <Link to={`/trip/${trip.id}`} className="card hover:shadow-lg transition-shadow group">
+      <div className="flex items-start justify-between mb-3">
+        <div className="min-w-0">
+          <h3 className="text-lg font-semibold text-neutral-900 group-hover:text-primary-600 transition-colors">
+            {trip.name}
+          </h3>
+          <div className="flex flex-wrap items-center gap-1.5 mt-1">
+            <span className={`text-xs rounded-full px-2 py-0.5 ${badge.cls}`}>
+              {status === 'upcoming' ? `In ${daysUntil(trip)} days` : badge.label}
+            </span>
+            {!trip.is_owner && (
+              <span className="inline-flex items-center gap-1 text-xs text-secondary-700 bg-secondary-50 rounded-full px-2 py-0.5">
+                <Users className="w-3 h-3" />
+                Shared by {trip.owner_username}
+              </span>
+            )}
+          </div>
+        </div>
+        {trip.is_owner && (
+          <button
+            className="p-1.5 text-neutral-300 hover:text-red-600 transition-colors"
+            onClick={(e) => onDelete(e, trip)}
+            title="Delete trip"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+      {trip.description && (
+        <p className="text-sm text-neutral-600 mb-4 line-clamp-2">{trip.description}</p>
+      )}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-neutral-500">
+        <span className="flex items-center gap-1">
+          <Calendar className="w-4 h-4" />
+          {formatDateRange(trip)}
+        </span>
+        <span className="flex items-center gap-1">
+          <MapPin className="w-4 h-4" />
+          {trip.item_count} stop{trip.item_count !== 1 ? 's' : ''}
+        </span>
+        <span className="flex items-center gap-1">
+          <Camera className="w-4 h-4" />
+          {trip.photo_count}
+        </span>
+      </div>
+    </Link>
+  );
+};
+
 const Dashboard = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -84,12 +181,13 @@ const Dashboard = () => {
     }
   };
 
-  const formatDateRange = (trip) => {
-    if (!trip.start_date) return 'No dates set';
-    const start = new Date(trip.start_date).toLocaleDateString();
-    if (!trip.end_date) return start;
-    return `${start} – ${new Date(trip.end_date).toLocaleDateString()}`;
-  };
+  // Bucket trips by derived status; the nearest upcoming trip becomes the hero
+  const grouped = { ongoing: [], upcoming: [], planning: [], completed: [] };
+  for (const trip of trips) grouped[classifyTrip(trip)].push(trip);
+  grouped.upcoming.sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
+  grouped.completed.sort((a, b) => new Date(b.end_date) - new Date(a.end_date));
+  const upNext = grouped.upcoming[0] || null;
+  if (upNext) grouped.upcoming = grouped.upcoming.slice(1);
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -233,56 +331,50 @@ const Dashboard = () => {
               </div>
             </div>
           ) : (
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {trips.map((trip) => (
+            <div className="space-y-8">
+              {/* Up next hero — the nearest upcoming trip */}
+              {upNext && (
                 <Link
-                  key={trip.id}
-                  to={`/trip/${trip.id}`}
-                  className="card hover:shadow-lg transition-shadow group"
+                  to={`/trip/${upNext.id}`}
+                  className="block rounded-2xl overflow-hidden bg-gradient-to-r from-primary-500 to-secondary-600 text-white shadow-lg hover:shadow-xl transition-shadow"
                 >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="min-w-0">
-                      <h3 className="text-lg font-semibold text-neutral-900 group-hover:text-primary-600 transition-colors">
-                        {trip.name}
+                  <div className="p-5 sm:p-7 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-8">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-widest text-white/80 mb-1">
+                        ✈️ Up Next
+                      </p>
+                      <h3 className="text-2xl sm:text-3xl font-display font-bold truncate">
+                        {upNext.name}
                       </h3>
-                      {!trip.is_owner && (
-                        <span className="inline-flex items-center gap-1 text-xs text-secondary-700 bg-secondary-50 rounded-full px-2 py-0.5 mt-1">
-                          <Users className="w-3 h-3" />
-                          Shared by {trip.owner_username}
-                        </span>
-                      )}
+                      <p className="text-white/85 text-sm mt-1">
+                        {formatDateRange(upNext)} · {upNext.item_count} stop
+                        {upNext.item_count !== 1 ? 's' : ''}
+                      </p>
                     </div>
-                    {trip.is_owner && (
-                      <button
-                        className="p-1.5 text-neutral-300 hover:text-red-600 transition-colors"
-                        onClick={(e) => handleDelete(e, trip)}
-                        title="Delete trip"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                  {trip.description && (
-                    <p className="text-sm text-neutral-600 mb-4 line-clamp-2">
-                      {trip.description}
-                    </p>
-                  )}
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-neutral-500">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-4 h-4" />
-                      {formatDateRange(trip)}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <MapPin className="w-4 h-4" />
-                      {trip.item_count} stop{trip.item_count !== 1 ? 's' : ''}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Camera className="w-4 h-4" />
-                      {trip.photo_count}
-                    </span>
+                    <div className="text-left sm:text-right flex-shrink-0">
+                      <p className="text-4xl sm:text-5xl font-display font-bold">
+                        {daysUntil(upNext)}
+                      </p>
+                      <p className="text-white/85 text-sm">
+                        day{daysUntil(upNext) !== 1 ? 's' : ''} to go
+                      </p>
+                    </div>
                   </div>
                 </Link>
-              ))}
+              )}
+
+              {TRIP_SECTIONS.map(({ key, title }) =>
+                grouped[key]?.length ? (
+                  <section key={key}>
+                    <h3 className="text-lg font-semibold text-neutral-800 mb-3">{title}</h3>
+                    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                      {grouped[key].map((trip) => (
+                        <TripCard key={trip.id} trip={trip} onDelete={handleDelete} />
+                      ))}
+                    </div>
+                  </section>
+                ) : null
+              )}
             </div>
           )}
         </div>

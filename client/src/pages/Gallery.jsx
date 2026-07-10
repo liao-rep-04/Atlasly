@@ -1,12 +1,36 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
+import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
   ArrowLeft, Map as MapIcon, LayoutGrid, X, ChevronLeft, ChevronRight, Camera,
+  ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { getAllPhotos } from '../lib/api';
+
+// Cluster bubble: photo count across the merged stops
+const clusterIcon = (cluster) => {
+  const count = cluster
+    .getAllChildMarkers()
+    .reduce((n, m) => n + (m.options.photoCount || 1), 0);
+  return L.divIcon({
+    className: 'custom-marker',
+    html: `
+      <div style="
+        width: 48px; height: 48px; border-radius: 50%;
+        background: #ef4444; border: 3px solid white;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+        display: flex; align-items: center; justify-content: center;
+        color: white; font-weight: 700; font-size: 14px;
+        font-family: system-ui, sans-serif;
+      ">${count}</div>
+    `,
+    iconSize: [48, 48],
+    iconAnchor: [24, 24],
+  });
+};
 
 // Circular photo-thumbnail marker with a count badge
 const photoMarkerIcon = (url, count) =>
@@ -53,6 +77,8 @@ const Gallery = () => {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('map'); // 'map' | 'grid'
   const [lightbox, setLightbox] = useState(null); // { list, index }
+  const [tripFilter, setTripFilter] = useState('all');
+  const [collapsed, setCollapsed] = useState(() => new Set());
 
   useEffect(() => {
     getAllPhotos(tripId)
@@ -60,10 +86,42 @@ const Gallery = () => {
       .finally(() => setLoading(false));
   }, [tripId]);
 
+  // Trips represented in the photo set (for the filter chips)
+  const tripsInSet = useMemo(() => {
+    const seen = new Map();
+    for (const p of photos) {
+      if (!seen.has(p.trip_id)) seen.set(p.trip_id, { id: p.trip_id, name: p.trip_name, count: 0 });
+      seen.get(p.trip_id).count += 1;
+    }
+    return [...seen.values()];
+  }, [photos]);
+
+  const visiblePhotos = useMemo(
+    () => (tripFilter === 'all' ? photos : photos.filter((p) => p.trip_id === tripFilter)),
+    [photos, tripFilter]
+  );
+
+  // Grid sections: photos bucketed per trip, newest trip first
+  const tripSections = useMemo(() => {
+    const byTrip = new Map();
+    for (const p of visiblePhotos) {
+      if (!byTrip.has(p.trip_id)) byTrip.set(p.trip_id, { id: p.trip_id, name: p.trip_name, photos: [] });
+      byTrip.get(p.trip_id).photos.push(p);
+    }
+    return [...byTrip.values()];
+  }, [visiblePhotos]);
+
+  const toggleSection = (id) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
   // Group photos by stop for map markers (stops without coords: grid-only)
   const groups = useMemo(() => {
     const byItem = new Map();
-    for (const photo of photos) {
+    for (const photo of visiblePhotos) {
       if (photo.latitude == null || photo.longitude == null) continue;
       if (!byItem.has(photo.item_id)) {
         byItem.set(photo.item_id, {
@@ -78,7 +136,7 @@ const Gallery = () => {
       byItem.get(photo.item_id).photos.push(photo);
     }
     return [...byItem.values()];
-  }, [photos]);
+  }, [visiblePhotos]);
 
   const openLightbox = useCallback((list, index) => setLightbox({ list, index }), []);
   const step = (delta) =>
@@ -120,7 +178,7 @@ const Gallery = () => {
             <h1 className="text-lg sm:text-xl font-display font-bold text-neutral-900 truncate">
               {tripId ? `${photos[0]?.trip_name || 'Trip'} Memories` : 'All Memories'}
               <span className="ml-2 text-sm font-normal text-neutral-500">
-                {photos.length} photo{photos.length !== 1 ? 's' : ''}
+                {visiblePhotos.length} photo{visiblePhotos.length !== 1 ? 's' : ''}
               </span>
             </h1>
             <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-0.5 flex-shrink-0">
@@ -144,6 +202,34 @@ const Gallery = () => {
               </button>
             </div>
           </div>
+          {/* Trip filter chips (universal view with 2+ trips) */}
+          {!tripId && tripsInSet.length > 1 && (
+            <div className="flex items-center gap-2 mt-2 overflow-x-auto pb-1 scrollbar-thin">
+              <button
+                className={`badge flex-shrink-0 ${
+                  tripFilter === 'all'
+                    ? 'bg-primary-500 text-white'
+                    : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                }`}
+                onClick={() => setTripFilter('all')}
+              >
+                All trips
+              </button>
+              {tripsInSet.map((t) => (
+                <button
+                  key={t.id}
+                  className={`badge flex-shrink-0 ${
+                    tripFilter === t.id
+                      ? 'bg-primary-500 text-white'
+                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                  }`}
+                  onClick={() => setTripFilter(tripFilter === t.id ? 'all' : t.id)}
+                >
+                  {t.name} · {t.count}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -175,18 +261,25 @@ const Gallery = () => {
               url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
             />
             <FitToMarkers groups={groups} />
-            {groups.map((group) => (
-              <Marker
-                key={group.item_id}
-                position={[group.latitude, group.longitude]}
-                icon={photoMarkerIcon(group.photos[0].url, group.photos.length)}
-                eventHandlers={{ click: () => openLightbox(group.photos, 0) }}
-              />
-            ))}
+            <MarkerClusterGroup
+              iconCreateFunction={clusterIcon}
+              maxClusterRadius={44}
+              showCoverageOnHover={false}
+            >
+              {groups.map((group) => (
+                <Marker
+                  key={group.item_id}
+                  position={[group.latitude, group.longitude]}
+                  icon={photoMarkerIcon(group.photos[0].url, group.photos.length)}
+                  photoCount={group.photos.length}
+                  eventHandlers={{ click: () => openLightbox(group.photos, 0) }}
+                />
+              ))}
+            </MarkerClusterGroup>
           </MapContainer>
           {(() => {
             const unpinned =
-              photos.length - groups.reduce((n, g) => n + g.photos.length, 0);
+              visiblePhotos.length - groups.reduce((n, g) => n + g.photos.length, 0);
             return unpinned > 0 ? (
               <div className="absolute bottom-4 left-4 z-[1000] bg-white/95 backdrop-blur rounded-lg shadow px-3 py-2 text-xs text-neutral-600">
                 {unpinned} photo{unpinned !== 1 ? 's' : ''} from stops without a pin —
@@ -196,29 +289,53 @@ const Gallery = () => {
           })()}
         </div>
       ) : (
-        <div className="container-page">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-3">
-            {photos.map((photo, i) => (
-              <button
-                key={photo.id}
-                className="relative group aspect-square rounded-xl overflow-hidden bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                onClick={() => openLightbox(photos, i)}
-              >
-                <img
-                  src={photo.url}
-                  alt={photo.caption || photo.item_name}
-                  loading="lazy"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 pt-6 pb-1.5 text-left opacity-0 group-hover:opacity-100 transition-opacity">
-                  <p className="text-white text-xs font-medium truncate">{photo.item_name}</p>
-                  {!tripId && (
-                    <p className="text-white/70 text-[10px] truncate">{photo.trip_name}</p>
+        <div className="container-page space-y-6">
+          {tripSections.map((section) => (
+            <section key={section.id}>
+              {/* Section header — collapsible; hidden redundantly on per-trip view */}
+              {!tripId && (
+                <button
+                  className="w-full flex items-center justify-between mb-2 group"
+                  onClick={() => toggleSection(section.id)}
+                >
+                  <h2 className="text-base sm:text-lg font-semibold text-neutral-900">
+                    {section.name}
+                    <span className="ml-2 text-sm font-normal text-neutral-500">
+                      {section.photos.length} photo{section.photos.length !== 1 ? 's' : ''}
+                    </span>
+                  </h2>
+                  {collapsed.has(section.id) ? (
+                    <ChevronDown className="w-5 h-5 text-neutral-400 group-hover:text-neutral-700" />
+                  ) : (
+                    <ChevronUp className="w-5 h-5 text-neutral-400 group-hover:text-neutral-700" />
                   )}
+                </button>
+              )}
+              {!collapsed.has(section.id) && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-3">
+                  {section.photos.map((photo, i) => (
+                    <button
+                      key={photo.id}
+                      className="relative group aspect-square rounded-xl overflow-hidden bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      onClick={() => openLightbox(section.photos, i)}
+                    >
+                      <img
+                        src={photo.url}
+                        alt={photo.caption || photo.item_name}
+                        loading="lazy"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 pt-6 pb-1.5 text-left opacity-0 group-hover:opacity-100 transition-opacity">
+                        <p className="text-white text-xs font-medium truncate">
+                          {photo.item_name}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
                 </div>
-              </button>
-            ))}
-          </div>
+              )}
+            </section>
+          ))}
         </div>
       )}
 
