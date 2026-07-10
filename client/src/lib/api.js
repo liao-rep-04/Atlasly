@@ -92,6 +92,8 @@ export const uploadPhoto = (tripItemId, file, caption) => {
 };
 
 export const getPhotos = (tripItemId) => api.get(`/photos/${tripItemId}`);
+export const getAllPhotos = (tripId) =>
+  api.get('/photos', { params: tripId ? { trip_id: tripId } : {} });
 export const deletePhoto = (photoId) => api.delete(`/photos/${photoId}`);
 
 // Place search (Nominatim) + fun facts (Wikipedia), proxied by the server

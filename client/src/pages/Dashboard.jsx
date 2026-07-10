@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
-import { Plus, MapPin, Calendar, Camera, Trash2, X, Users, Mail, Pencil } from 'lucide-react';
+import { Plus, MapPin, Calendar, Camera, Trash2, X, Users, Mail, Pencil, Images } from 'lucide-react';
 import { getTrips, createTrip, deleteTrip, getInvitations, respondToInvitation } from '../lib/api';
 import CompleteProfileModal from '../components/CompleteProfileModal';
 
@@ -150,12 +150,18 @@ const Dashboard = () => {
                 Start planning your next adventure
               </p>
             </div>
-            {trips.length > 0 && (
-              <button className="btn-primary" onClick={() => setShowCreateForm(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                New Trip
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              <Link to="/gallery" className="btn-outline">
+                <Images className="w-4 h-4 mr-2" />
+                Memories
+              </Link>
+              {trips.length > 0 && (
+                <button className="btn-primary" onClick={() => setShowCreateForm(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  New Trip
+                </button>
+              )}
+            </div>
           </div>
 
           {error && (

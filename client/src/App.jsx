@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import TripDetail from './pages/TripDetail';
+import Gallery from './pages/Gallery';
 
 function App() {
   return (
@@ -29,6 +30,22 @@ function App() {
               element={
                 <PrivateRoute>
                   <TripDetail />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/gallery"
+              element={
+                <PrivateRoute>
+                  <Gallery />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/trip/:id/gallery"
+              element={
+                <PrivateRoute>
+                  <Gallery />
                 </PrivateRoute>
               }
             />

@@ -33,6 +33,43 @@ const loadOwnedItem = async (itemId, userId, res) => {
 };
 
 /**
+ * GET /api/photos?trip_id=...
+ * Every photo across the user's trips (owned + joined), with the stop and
+ * trip it belongs to — powers the gallery map and grid views.
+ */
+router.get('/', async (req, res) => {
+  try {
+    const params = [req.user.id];
+    let tripFilter = '';
+    if (req.query.trip_id) {
+      params.push(req.query.trip_id);
+      tripFilter = 'AND t.id = $2';
+    }
+    const result = await query(
+      `SELECT p.id, p.url, p.caption, p.created_at,
+              ti.id AS item_id, ti.name AS item_name,
+              ti.latitude, ti.longitude,
+              t.id AS trip_id, t.name AS trip_name
+       FROM photos p
+       JOIN trip_items ti ON ti.id = p.trip_item_id
+       JOIN trips t ON t.id = ti.trip_id
+       WHERE (
+         t.user_id = $1 OR EXISTS (
+           SELECT 1 FROM trip_members tm
+           WHERE tm.trip_id = t.id AND tm.user_id = $1 AND tm.status = 'accepted'
+         )
+       ) ${tripFilter}
+       ORDER BY p.created_at DESC`,
+      params
+    );
+    res.json({ photos: result.rows });
+  } catch (error) {
+    console.error('[Photos Route] ❌ Gallery error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
  * POST /api/photos/:tripItemId
  * Upload a photo for a trip item (multipart field: "photo")
  */

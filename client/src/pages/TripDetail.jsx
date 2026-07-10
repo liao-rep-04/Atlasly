@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   MapPin, Calendar, DollarSign, Plus, List, Map as MapIcon,
-  ArrowLeft, Play, X, UserPlus,
+  ArrowLeft, Play, X, UserPlus, Images,
 } from 'lucide-react';
 import TripMap from '../components/TripMap';
 import StopForm from '../components/StopForm';
@@ -189,6 +189,13 @@ const TripDetail = () => {
               <span className="sm:hidden">Back</span>
             </Link>
             <div className="flex items-center gap-2">
+              <Link
+                to={`/trip/${id}/gallery`}
+                className="btn-ghost px-4 py-2"
+                title="Trip photo gallery"
+              >
+                <Images className="w-4 h-4" />
+              </Link>
               <button
                 className={`btn-ghost px-4 py-2 ${
                   viewMode === 'list' ? 'bg-primary-100 text-primary-700' : ''
