@@ -4,7 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
   X, Pause, Play, SkipBack, SkipForward, Sparkles, RotateCcw, MapPin,
-  Volume2, VolumeX,
+  Volume2, VolumeX, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { transportEmoji } from '../lib/tripConstants';
 
@@ -326,16 +326,28 @@ const TripPlayback = ({ trip, stops, travelers = [], onClose }) => {
     if (!muted && audio.paused) audio.play().catch(() => {});
   }, [muted]);
 
-  // Escape closes; lock body scroll while open
+  const stepPhoto = useCallback(
+    (delta) => {
+      if (photos.length < 2) return;
+      setPhotoIdx((i) => (i + delta + photos.length) % photos.length);
+    },
+    [photos.length]
+  );
+
+  // Escape closes; arrows flip photos; lock body scroll while open
   useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onClose();
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowRight') stepPhoto(1);
+      if (e.key === 'ArrowLeft') stepPhoto(-1);
+    };
     window.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
     return () => {
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = '';
     };
-  }, [onClose]);
+  }, [onClose, stepPhoto]);
 
   // Dwell at a stop, then move on (or finish)
   useEffect(() => {
@@ -464,16 +476,32 @@ const TripPlayback = ({ trip, stops, travelers = [], onClose }) => {
                     </div>
                   )}
                   {photos.length > 1 && (
-                    <div className="absolute top-3 right-3 flex gap-1">
-                      {photos.map((_, i) => (
-                        <div
-                          key={i}
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            i === photoIdx ? 'bg-white' : 'bg-white/40'
-                          }`}
-                        />
-                      ))}
-                    </div>
+                    <>
+                      <div className="absolute top-3 right-3 flex gap-1">
+                        {photos.map((_, i) => (
+                          <div
+                            key={i}
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              i === photoIdx ? 'bg-white' : 'bg-white/40'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      <button
+                        className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/35 hover:bg-black/55 text-white flex items-center justify-center"
+                        onClick={() => stepPhoto(-1)}
+                        title="Previous photo"
+                      >
+                        <ChevronLeft className="w-5 h-5" />
+                      </button>
+                      <button
+                        className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/35 hover:bg-black/55 text-white flex items-center justify-center"
+                        onClick={() => stepPhoto(1)}
+                        title="Next photo"
+                      >
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
+                    </>
                   )}
                 </div>
               )}
@@ -532,7 +560,7 @@ const TripPlayback = ({ trip, stops, travelers = [], onClose }) => {
 
         {/* CC-BY attribution for the bundled ambience track */}
         <p className="px-4 pb-2 text-[10px] text-neutral-400 flex-shrink-0">
-          Music: "Adventure Meme" — Kevin MacLeod (incompetech.com), CC BY 4.0
+          Music: "Call to Adventure" — Kevin MacLeod (incompetech.com), CC BY 4.0
         </p>
       </div>
 

@@ -265,6 +265,17 @@ const Gallery = () => {
               iconCreateFunction={clusterIcon}
               maxClusterRadius={44}
               showCoverageOnHover={false}
+              zoomToBoundsOnClick={false}
+              spiderfyOnMaxZoom={false}
+              eventHandlers={{
+                // Cluster click: view every photo in that area, not zoom
+                clusterclick: (e) => {
+                  const combined = e.layer
+                    .getAllChildMarkers()
+                    .flatMap((m) => m.options.photos || []);
+                  if (combined.length) openLightbox(combined, 0);
+                },
+              }}
             >
               {groups.map((group) => (
                 <Marker
@@ -272,6 +283,7 @@ const Gallery = () => {
                   position={[group.latitude, group.longitude]}
                   icon={photoMarkerIcon(group.photos[0].url, group.photos.length)}
                   photoCount={group.photos.length}
+                  photos={group.photos}
                   eventHandlers={{ click: () => openLightbox(group.photos, 0) }}
                 />
               ))}

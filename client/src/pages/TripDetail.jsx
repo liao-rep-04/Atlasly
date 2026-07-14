@@ -8,6 +8,7 @@ import TripMap from '../components/TripMap';
 import StopForm from '../components/StopForm';
 import StopCard from '../components/StopCard';
 import TripPlayback from '../components/TripPlayback';
+import TripSlideshow from '../components/TripSlideshow';
 import {
   getTrip, createTripItem, updateTripItem, deleteTripItem,
   reorderTripItems, uploadPhoto, deletePhoto, inviteToTrip,
@@ -27,6 +28,7 @@ const TripDetail = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [pendingPin, setPendingPin] = useState(null);
   const [playing, setPlaying] = useState(false);
+  const [slideshow, setSlideshow] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -142,6 +144,10 @@ const TripDetail = () => {
 
   const sortedItems = [...tripItems].sort((a, b) => a.order_index - b.order_index);
   const totalCost = tripItems.reduce((sum, item) => sum + (parseFloat(item.cost) || 0), 0);
+  // Every photo in stop order — the slideshow source
+  const allPhotos = sortedItems.flatMap((it) =>
+    (it.photos || []).map((p) => ({ ...p, item_name: it.name }))
+  );
   // pg returns DECIMAL as strings; playback does arithmetic on these
   const playableStops = sortedItems
     .filter((it) => it.latitude != null && it.longitude != null)
@@ -300,6 +306,19 @@ const TripDetail = () => {
               >
                 <Play className="w-4 h-4 mr-2" />
                 Play Trip
+              </button>
+              <button
+                className="btn-outline"
+                onClick={() => setSlideshow(true)}
+                disabled={allPhotos.length < 1}
+                title={
+                  allPhotos.length < 1
+                    ? 'Add photos to your stops first'
+                    : 'Watch all trip photos as a slideshow'
+                }
+              >
+                <Images className="w-4 h-4 mr-2" />
+                Slideshow
               </button>
               <button
                 className="btn-primary"
@@ -468,6 +487,11 @@ const TripDetail = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Slideshow overlay */}
+      {slideshow && (
+        <TripSlideshow trip={trip} photos={allPhotos} onClose={() => setSlideshow(false)} />
       )}
 
       {/* Playback overlay */}
