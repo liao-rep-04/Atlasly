@@ -1,14 +1,23 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
+  DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext, verticalListSortingStrategy, sortableKeyboardCoordinates, arrayMove,
+} from '@dnd-kit/sortable';
+import {
   MapPin, Calendar, DollarSign, Plus, List, Map as MapIcon,
-  ArrowLeft, Play, X, UserPlus, Images,
+  ArrowLeft, Play, X, UserPlus, Images, Lightbulb, Wand2,
 } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 import TripMap from '../components/TripMap';
 import StopForm from '../components/StopForm';
-import StopCard from '../components/StopCard';
+import SortableStopCard from '../components/SortableStopCard';
+import IdeaBoard from '../components/IdeaBoard';
 import TripPlayback from '../components/TripPlayback';
 import TripSlideshow from '../components/TripSlideshow';
+import { optimizeItinerary, totalRouteDistance } from '../lib/routeOptimizer';
 import {
   getTrip, createTripItem, updateTripItem, deleteTripItem,
   reorderTripItems, uploadPhoto, deletePhoto, inviteToTrip,
@@ -16,6 +25,7 @@ import {
 
 const TripDetail = () => {
   const { id } = useParams();
+  const { user } = useAuth();
   const [trip, setTrip] = useState(null);
   const [members, setMembers] = useState([]);
   const [tripItems, setTripItems] = useState([]);
@@ -29,6 +39,15 @@ const TripDetail = () => {
   const [pendingPin, setPendingPin] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [slideshow, setSlideshow] = useState(false);
+  const [optimizeMsg, setOptimizeMsg] = useState('');
+
+  // Pointer drag needs a small move threshold so a plain click (edit/delete/
+  // photo buttons) doesn't get eaten as a drag start. Keyboard drag: focus
+  // the grip handle, Space to pick up, Arrow keys to move, Space to drop.
+  const dragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   useEffect(() => {
     const load = async () => {
@@ -83,18 +102,72 @@ const TripDetail = () => {
     setTripItems((items) => items.filter((it) => it.id !== item.id));
   };
 
-  const handleMove = async (item, direction) => {
+  // Shared by manual reorder, drag-and-drop, and the optimizer: takes a full
+  // ordered array, assigns fresh order_index values, updates state
+  // optimistically, then persists.
+  const commitOrder = useCallback(
+    async (orderedItems) => {
+      const reordered = orderedItems.map((it, i) => ({ ...it, order_index: i }));
+      setTripItems(reordered);
+      await reorderTripItems(
+        id,
+        reordered.map((it) => ({ id: it.id, order_index: it.order_index }))
+      );
+    },
+    [id]
+  );
+
+  const handleMove = (item, direction) => {
     const sorted = [...tripItems].sort((a, b) => a.order_index - b.order_index);
     const from = sorted.findIndex((it) => it.id === item.id);
     const to = from + direction;
     if (to < 0 || to >= sorted.length) return;
     [sorted[from], sorted[to]] = [sorted[to], sorted[from]];
-    const reordered = sorted.map((it, i) => ({ ...it, order_index: i }));
-    setTripItems(reordered);
-    await reorderTripItems(
-      id,
-      reordered.map((it) => ({ id: it.id, order_index: it.order_index }))
+    commitOrder(sorted);
+  };
+
+  const handleDragEnd = ({ active, over }) => {
+    if (!over || active.id === over.id) return;
+    const sorted = [...tripItems].sort((a, b) => a.order_index - b.order_index);
+    const from = sorted.findIndex((it) => it.id === active.id);
+    const to = sorted.findIndex((it) => it.id === over.id);
+    if (from === -1 || to === -1) return;
+    commitOrder(arrayMove(sorted, from, to));
+  };
+
+  const handleOptimize = () => {
+    const sorted = [...tripItems].sort((a, b) => a.order_index - b.order_index);
+    // Distance math needs floats; pg returns DECIMAL columns as strings
+    const positioned = sorted
+      .filter((it) => it.latitude != null && it.longitude != null)
+      .map((it) => ({ ...it, latitude: parseFloat(it.latitude), longitude: parseFloat(it.longitude) }));
+
+    if (positioned.length < 3) {
+      setOptimizeMsg('Add at least 3 stops with locations to optimize the route.');
+      setTimeout(() => setOptimizeMsg(''), 4000);
+      return;
+    }
+
+    const before = totalRouteDistance(positioned);
+    const optimized = optimizeItinerary(sorted);
+    const optimizedPositioned = optimized.filter((it) => it.latitude != null && it.longitude != null);
+    const after = totalRouteDistance(
+      optimizedPositioned.map((it) => ({ ...it, latitude: parseFloat(it.latitude), longitude: parseFloat(it.longitude) }))
     );
+    const savedKm = before - after;
+
+    commitOrder(optimized);
+    setOptimizeMsg(
+      savedKm > 1
+        ? `Reordered — trimmed about ${Math.round(savedKm)} km of local travel. Stops in different cities/countries were left in place.`
+        : 'Your order was already close to optimal — only minor tweaks made within each area.'
+    );
+    setTimeout(() => setOptimizeMsg(''), 6000);
+  };
+
+  const handleIdeaPromoted = (item) => {
+    setTripItems((items) => [...items, item]);
+    setViewMode('split');
   };
 
   const handleUploadPhoto = async (itemId, file) => {
@@ -227,6 +300,15 @@ const TripDetail = () => {
               >
                 <MapIcon className="w-4 h-4" />
               </button>
+              <button
+                className={`btn-ghost px-4 py-2 ${
+                  viewMode === 'ideas' ? 'bg-amber-100 text-amber-700' : ''
+                }`}
+                onClick={() => setViewMode('ideas')}
+                title="Idea board"
+              >
+                <Lightbulb className="w-4 h-4" />
+              </button>
             </div>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -355,83 +437,120 @@ const TripDetail = () => {
           </div>
         )}
 
-        {/* Content based on view mode */}
-        <div
-          className={`grid gap-6 ${
-            viewMode === 'split' ? 'md:grid-cols-2' : 'grid-cols-1'
-          }`}
-        >
-          {/* List view */}
-          {(viewMode === 'list' || viewMode === 'split') && (
-            <div>
-              <h2 className="text-xl font-semibold mb-4">Itinerary</h2>
-              <div className="space-y-3">
-                {sortedItems.length === 0 ? (
-                  <div className="card text-center py-12">
-                    <div className="text-4xl mb-4">📍</div>
-                    <h3 className="text-lg font-semibold text-neutral-900 mb-2">
-                      No stops yet
-                    </h3>
-                    <p className="text-neutral-600 mb-4">
-                      Search for a place or click the map to drop your first pin
-                    </p>
-                    <button className="btn-primary" onClick={() => setShowAddForm(true)}>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Stop
+        {/* Ideas view replaces the itinerary/map grid entirely */}
+        {viewMode === 'ideas' ? (
+          <IdeaBoard
+            tripId={id}
+            currentUserId={user?.id}
+            isOwner={trip.is_owner}
+            onPromoted={handleIdeaPromoted}
+          />
+        ) : (
+          <div
+            className={`grid gap-6 ${
+              viewMode === 'split' ? 'md:grid-cols-2' : 'grid-cols-1'
+            }`}
+          >
+            {/* List view */}
+            {(viewMode === 'list' || viewMode === 'split') && (
+              <div>
+                <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+                  <h2 className="text-xl font-semibold">Itinerary</h2>
+                  {sortedItems.length >= 3 && (
+                    <button
+                      className="btn-outline px-3 py-1.5 text-sm"
+                      onClick={handleOptimize}
+                      title="Reorder stops within each area for a shorter route; different cities/countries stay in your planned order"
+                    >
+                      <Wand2 className="w-4 h-4 mr-1.5" />
+                      Optimize Route
                     </button>
+                  )}
+                </div>
+                {optimizeMsg && (
+                  <div className="mb-3 p-3 bg-primary-50 border border-primary-200 rounded-lg text-sm text-primary-800">
+                    {optimizeMsg}
                   </div>
-                ) : (
-                  sortedItems.map((item, index) => (
-                    <StopCard
-                      key={item.id}
-                      item={item}
-                      index={index}
-                      isFirst={index === 0}
-                      isLast={index === sortedItems.length - 1}
-                      onEdit={(it) => {
-                        setEditingItem(it);
-                        setShowAddForm(false);
-                        setPendingPin(null);
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                      }}
-                      onDelete={handleDeleteItem}
-                      onMove={handleMove}
-                      onUploadPhoto={handleUploadPhoto}
-                      onDeletePhoto={handleDeletePhoto}
-                    />
-                  ))
                 )}
+                <div className="space-y-3">
+                  {sortedItems.length === 0 ? (
+                    <div className="card text-center py-12">
+                      <div className="text-4xl mb-4">📍</div>
+                      <h3 className="text-lg font-semibold text-neutral-900 mb-2">
+                        No stops yet
+                      </h3>
+                      <p className="text-neutral-600 mb-4">
+                        Search for a place or click the map to drop your first pin
+                      </p>
+                      <button className="btn-primary" onClick={() => setShowAddForm(true)}>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Stop
+                      </button>
+                    </div>
+                  ) : (
+                    <DndContext
+                      sensors={dragSensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={handleDragEnd}
+                    >
+                      <SortableContext
+                        items={sortedItems.map((it) => it.id)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        {sortedItems.map((item, index) => (
+                          <SortableStopCard
+                            key={item.id}
+                            item={item}
+                            index={index}
+                            isFirst={index === 0}
+                            isLast={index === sortedItems.length - 1}
+                            onEdit={(it) => {
+                              setEditingItem(it);
+                              setShowAddForm(false);
+                              setPendingPin(null);
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            onDelete={handleDeleteItem}
+                            onMove={handleMove}
+                            onUploadPhoto={handleUploadPhoto}
+                            onDeletePhoto={handleDeletePhoto}
+                          />
+                        ))}
+                      </SortableContext>
+                    </DndContext>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Map view — first on mobile so it sits next to the add-stop form */}
-          {(viewMode === 'map' || viewMode === 'split') && (
-            <div className="order-first md:order-none">
-              <h2 className="text-xl font-semibold mb-4 flex items-center justify-between">
-                Map View
-                {formOpen && (
-                  <span className="text-sm font-normal text-amber-600">
-                    Click the map to place this stop 📍
-                  </span>
-                )}
-              </h2>
-              <div
-                className={`${
-                  viewMode === 'map'
-                    ? 'h-[60vh] md:h-[calc(100vh-280px)]'
-                    : 'h-[45vh] md:h-[600px]'
-                } md:sticky md:top-40`}
-              >
-                <TripMap
-                  tripItems={tripItems}
-                  onMapClick={handleMapClick}
-                  draftPin={formOpen ? pendingPin : null}
-                />
+            {/* Map view — first on mobile so it sits next to the add-stop form */}
+            {(viewMode === 'map' || viewMode === 'split') && (
+              <div className="order-first md:order-none">
+                <h2 className="text-xl font-semibold mb-4 flex items-center justify-between">
+                  Map View
+                  {formOpen && (
+                    <span className="text-sm font-normal text-amber-600">
+                      Click the map to place this stop 📍
+                    </span>
+                  )}
+                </h2>
+                <div
+                  className={`${
+                    viewMode === 'map'
+                      ? 'h-[60vh] md:h-[calc(100vh-280px)]'
+                      : 'h-[45vh] md:h-[600px]'
+                  } md:sticky md:top-40`}
+                >
+                  <TripMap
+                    tripItems={tripItems}
+                    onMapClick={handleMapClick}
+                    draftPin={formOpen ? pendingPin : null}
+                  />
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Invite modal */}

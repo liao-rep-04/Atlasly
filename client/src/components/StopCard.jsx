@@ -1,17 +1,19 @@
 import { useRef, useState } from 'react';
 import {
-  Edit, Trash2, ChevronUp, ChevronDown, Camera, X, Loader2, Sparkles,
+  Edit, Trash2, ChevronUp, ChevronDown, Camera, X, Loader2, Sparkles, GripVertical,
 } from 'lucide-react';
 import { typeEmoji, transportEmoji, TRANSPORT_MODES } from '../lib/tripConstants';
 
 /**
  * One stop in the itinerary list: details, photo strip with upload,
  * edit/delete/reorder controls. The transport badge above the card shows
- * how you get here from the previous stop.
+ * how you get here from the previous stop. `dragHandleProps` (from
+ * dnd-kit) is spread onto the grip icon for pointer/touch drag-reorder;
+ * the up/down buttons remain as a keyboard/no-drag fallback.
  */
 const StopCard = ({
   item, index, isFirst, isLast,
-  onEdit, onDelete, onMove, onUploadPhoto, onDeletePhoto, onHover,
+  onEdit, onDelete, onMove, onUploadPhoto, onDeletePhoto, onHover, dragHandleProps,
 }) => {
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
@@ -49,6 +51,15 @@ const StopCard = ({
       >
         <div className="flex items-start gap-4">
           <div className="flex flex-col items-center gap-1">
+            {dragHandleProps && (
+              <button
+                className="p-0.5 -mt-1 text-neutral-300 hover:text-neutral-600 cursor-grab active:cursor-grabbing touch-none"
+                title="Drag to reorder"
+                {...dragHandleProps}
+              >
+                <GripVertical className="w-4 h-4" />
+              </button>
+            )}
             <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-primary-500 to-secondary-600 flex items-center justify-center text-white font-semibold">
               {index + 1}
             </div>

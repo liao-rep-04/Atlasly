@@ -81,6 +81,12 @@ export const updateTripItem = (tripId, itemId, data) => api.put(`/trips/${tripId
 export const deleteTripItem = (tripId, itemId) => api.delete(`/trips/${tripId}/items/${itemId}`);
 export const reorderTripItems = (tripId, items) => api.put(`/trips/${tripId}/items/reorder`, { items });
 
+// Idea board endpoints
+export const getIdeas = (tripId) => api.get(`/trips/${tripId}/ideas`);
+export const createIdea = (tripId, data) => api.post(`/trips/${tripId}/ideas`, data);
+export const promoteIdea = (tripId, ideaId) => api.post(`/trips/${tripId}/ideas/${ideaId}/promote`);
+export const deleteIdea = (tripId, ideaId) => api.delete(`/trips/${tripId}/ideas/${ideaId}`);
+
 // Photo endpoints
 export const uploadPhoto = (tripItemId, file, caption) => {
   const formData = new FormData();

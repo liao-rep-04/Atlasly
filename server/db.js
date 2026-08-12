@@ -114,6 +114,28 @@ export const initializeDatabase = async () => {
     await query(`ALTER TABLE trip_items ADD COLUMN IF NOT EXISTS transport_mode VARCHAR(50)`);
     console.log('[DB] ✓ Trip items columns migrated');
 
+    // Idea board: proposals from any trip member that haven't (yet) been
+    // promoted into the itinerary. Kept as its own table rather than a
+    // trip_items status flag so promoted ideas can start fresh in the
+    // order sequence without dragging idea-only fields into trip_items.
+    await query(`
+      CREATE TABLE IF NOT EXISTS trip_ideas (
+        id VARCHAR(255) PRIMARY KEY,
+        trip_id VARCHAR(255) REFERENCES trips(id) ON DELETE CASCADE,
+        proposed_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+        type VARCHAR(50) NOT NULL DEFAULT 'experience',
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        location_name VARCHAR(255),
+        latitude DECIMAL(10, 7),
+        longitude DECIMAL(10, 7),
+        cost DECIMAL(10, 2),
+        currency VARCHAR(10) DEFAULT 'USD',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('[DB] ✓ Trip ideas table created/verified');
+
     // Photos table
     await query(`
       CREATE TABLE IF NOT EXISTS photos (
@@ -134,6 +156,7 @@ export const initializeDatabase = async () => {
     await query('CREATE INDEX IF NOT EXISTS idx_photos_trip_item_id ON photos(trip_item_id)');
     await query('CREATE INDEX IF NOT EXISTS idx_trip_members_user ON trip_members(user_id, status)');
     await query('CREATE INDEX IF NOT EXISTS idx_trip_members_trip ON trip_members(trip_id, status)');
+    await query('CREATE INDEX IF NOT EXISTS idx_trip_ideas_trip ON trip_ideas(trip_id)');
     console.log('[DB] ✓ Indexes created/verified');
 
     console.log('[DB] ✅ Database initialization complete');

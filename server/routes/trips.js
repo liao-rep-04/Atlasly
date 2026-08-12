@@ -425,6 +425,142 @@ router.put('/:id/items/:itemId', async (req, res) => {
 });
 
 /**
+ * GET /api/trips/:id/ideas
+ * List idea-board proposals for a trip, newest first, with proposer info
+ */
+router.get('/:id/ideas', async (req, res) => {
+  try {
+    const trip = await loadAccessibleTrip(req.params.id, req.user.id, res);
+    if (!trip) return;
+
+    const result = await query(
+      `SELECT ti.*, u.username AS proposed_by_username, u.selfie_url AS proposed_by_selfie
+       FROM trip_ideas ti
+       LEFT JOIN users u ON u.id = ti.proposed_by
+       WHERE ti.trip_id = $1
+       ORDER BY ti.created_at DESC`,
+      [trip.id]
+    );
+    res.json({ ideas: result.rows });
+  } catch (error) {
+    console.error('[Trips Route] ❌ Ideas list error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/trips/:id/ideas
+ * Propose an idea (any accepted member or the owner)
+ */
+router.post('/:id/ideas', async (req, res) => {
+  try {
+    const trip = await loadAccessibleTrip(req.params.id, req.user.id, res);
+    if (!trip) return;
+
+    const {
+      type, name, description, location_name, latitude, longitude, cost, currency,
+    } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Idea name is required' });
+    }
+
+    const id = randomUUID();
+    const result = await query(
+      `INSERT INTO trip_ideas
+         (id, trip_id, proposed_by, type, name, description, location_name,
+          latitude, longitude, cost, currency)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING *`,
+      [
+        id, trip.id, req.user.id, type || 'experience', name.trim(),
+        description || null, location_name || null, latitude ?? null,
+        longitude ?? null, cost ?? null, currency || 'USD',
+      ]
+    );
+    console.log(`[Trips Route] ✓ Idea proposed: ${id}`);
+    res.status(201).json({
+      idea: { ...result.rows[0], proposed_by_username: req.user.username, proposed_by_selfie: null },
+    });
+  } catch (error) {
+    console.error('[Trips Route] ❌ Idea create error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/trips/:id/ideas/:ideaId/promote
+ * Move an idea into the itinerary as a trip_item (appended to the end),
+ * then remove it from the idea board.
+ */
+router.post('/:id/ideas/:ideaId/promote', async (req, res) => {
+  try {
+    const trip = await loadAccessibleTrip(req.params.id, req.user.id, res);
+    if (!trip) return;
+
+    const idea = await query('SELECT * FROM trip_ideas WHERE id = $1 AND trip_id = $2', [
+      req.params.ideaId, trip.id,
+    ]);
+    if (idea.rows.length === 0) {
+      return res.status(404).json({ error: 'Idea not found' });
+    }
+    const i = idea.rows[0];
+
+    const orderResult = await query(
+      'SELECT COALESCE(MAX(order_index), -1) + 1 AS next FROM trip_items WHERE trip_id = $1',
+      [trip.id]
+    );
+
+    const itemId = randomUUID();
+    const result = await query(
+      `INSERT INTO trip_items
+         (id, trip_id, type, name, description, location_name, latitude, longitude,
+          cost, currency, order_index)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING *`,
+      [
+        itemId, trip.id, i.type, i.name, i.description, i.location_name,
+        i.latitude, i.longitude, i.cost, i.currency, orderResult.rows[0].next,
+      ]
+    );
+
+    await query('DELETE FROM trip_ideas WHERE id = $1', [i.id]);
+    console.log(`[Trips Route] ✓ Idea promoted to item: ${i.id} -> ${itemId}`);
+    res.status(201).json({ item: { ...result.rows[0], photos: [] } });
+  } catch (error) {
+    console.error('[Trips Route] ❌ Idea promote error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * DELETE /api/trips/:id/ideas/:ideaId
+ * Remove an idea (its proposer, or the trip owner, can withdraw it)
+ */
+router.delete('/:id/ideas/:ideaId', async (req, res) => {
+  try {
+    const trip = await loadAccessibleTrip(req.params.id, req.user.id, res);
+    if (!trip) return;
+
+    const idea = await query('SELECT proposed_by FROM trip_ideas WHERE id = $1 AND trip_id = $2', [
+      req.params.ideaId, trip.id,
+    ]);
+    if (idea.rows.length === 0) {
+      return res.status(404).json({ error: 'Idea not found' });
+    }
+    const canDelete = idea.rows[0].proposed_by === req.user.id || trip.user_id === req.user.id;
+    if (!canDelete) {
+      return res.status(403).json({ error: 'Only the proposer or trip creator can remove this idea' });
+    }
+
+    await query('DELETE FROM trip_ideas WHERE id = $1', [req.params.ideaId]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Trips Route] ❌ Idea delete error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
  * DELETE /api/trips/:id/items/:itemId
  * Delete an item (photos cascade)
  */
