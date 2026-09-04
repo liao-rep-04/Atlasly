@@ -10,7 +10,7 @@ import {
 } from '../utils/auth.js';
 import { imageUpload, removeUpload } from '../utils/imageUpload.js';
 import { authenticate } from '../middleware/auth.js';
-import { sendMail } from '../utils/mailer.js';
+import { sendMail, mailerConfigured } from '../utils/mailer.js';
 
 const router = express.Router();
 
@@ -215,22 +215,63 @@ router.post('/login', async (req, res) => {
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const hashToken = (token) => createHash('sha256').update(token).digest('hex');
 
+const issueResetToken = async (userId) => {
+  const rawToken = randomBytes(32).toString('hex');
+  await query(
+    `INSERT INTO password_resets (id, user_id, token_hash, expires_at)
+     VALUES ($1, $2, $3, $4)`,
+    [randomUUID(), userId, hashToken(rawToken), new Date(Date.now() + RESET_TOKEN_TTL_MS)]
+  );
+  return rawToken;
+};
+
 /**
  * POST /api/auth/forgot
- * Body: { email }. Looks up the account and, if one exists, emails both
- * the username and a password-reset link. Always responds with the same
- * generic message regardless of whether the email matched an account —
- * revealing that would let an attacker enumerate registered emails.
+ * Body: { email, username }.
+ *
+ * With email delivery configured (RESEND_API_KEY set): the standard secure
+ * flow — look up by email alone, and always respond with the same generic
+ * message regardless of whether it matched, so the endpoint can't be used
+ * to enumerate registered emails. The token only ever goes out via email.
+ *
+ * Without it configured (current default — pre-launch): there's no
+ * out-of-band channel to deliver a token through, so this falls back to
+ * verifying username+email together and handing the reset token straight
+ * back in the response, skipping the email step entirely. This is
+ * intentionally weaker (no proof of email ownership) and is meant to be
+ * temporary — set RESEND_API_KEY before a public launch and this branch
+ * stops running on its own.
  */
 router.post('/forgot', async (req, res) => {
   const genericResponse = {
     message: "If an account exists for that email, we've sent instructions.",
   };
   try {
-    const { email } = req.body;
+    const { email, username } = req.body;
     if (!email || !isValidEmail(email)) {
-      // Still generic — an invalid-format email can't match an account anyway
       return res.json(genericResponse);
+    }
+
+    if (!mailerConfigured()) {
+      if (!username || !username.trim()) {
+        return res.status(400).json({
+          error: 'Username and email are required (email delivery is not configured yet)',
+        });
+      }
+      const result = await query(
+        'SELECT id FROM users WHERE email = $1 AND username = $2',
+        [email.trim(), username.trim()]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'No account found with that username and email' });
+      }
+
+      const rawToken = await issueResetToken(result.rows[0].id);
+      console.log(
+        `[Auth Route] ⚠️ Password reset issued without email verification ` +
+          `(RESEND_API_KEY not set) for user: ${result.rows[0].id}`
+      );
+      return res.json({ resetToken: rawToken });
     }
 
     const result = await query('SELECT id, username FROM users WHERE email = $1', [
@@ -241,13 +282,7 @@ router.post('/forgot', async (req, res) => {
       return res.json(genericResponse);
     }
     const user = result.rows[0];
-
-    const rawToken = randomBytes(32).toString('hex');
-    await query(
-      `INSERT INTO password_resets (id, user_id, token_hash, expires_at)
-       VALUES ($1, $2, $3, $4)`,
-      [randomUUID(), user.id, hashToken(rawToken), new Date(Date.now() + RESET_TOKEN_TTL_MS)]
-    );
+    const rawToken = await issueResetToken(user.id);
 
     const appUrl = process.env.APP_URL || 'http://localhost:5173';
     const resetLink = `${appUrl}/reset-password?token=${rawToken}`;
@@ -268,7 +303,6 @@ router.post('/forgot', async (req, res) => {
     res.json(genericResponse);
   } catch (error) {
     console.error('[Auth Route] ❌ Forgot-password error:', error);
-    // Still generic on failure — don't leak whether the account exists
     res.json(genericResponse);
   }
 });

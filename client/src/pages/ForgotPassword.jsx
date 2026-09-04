@@ -1,25 +1,33 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Mail, ArrowLeft } from 'lucide-react';
 import { forgotPassword } from '../lib/api';
 
 const ForgotPassword = () => {
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      // The server always responds with the same generic message whether
-      // or not the email matches an account — that's deliberate, not a bug
-      await forgotPassword(email);
+      const res = await forgotPassword(email, username);
+      if (res.data.resetToken) {
+        // Email delivery isn't configured yet (pre-launch) — the server
+        // already verified username+email match, so go straight to reset
+        navigate(`/reset-password?token=${res.data.resetToken}`);
+        return;
+      }
+      // Normal path: the server always responds identically whether or
+      // not the email matched an account — that's deliberate, not a bug
       setSubmitted(true);
     } catch (err) {
-      setError('Something went wrong. Please try again.');
+      setError(err.response?.data?.error || 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -56,8 +64,7 @@ const ForgotPassword = () => {
                 Forgot username or password?
               </h2>
               <p className="text-neutral-600 text-sm text-center mb-6">
-                Enter your email and we'll send you your username along with
-                a link to reset your password.
+                Enter your username and email — we'll help you get back in.
               </p>
 
               {error && (
@@ -67,6 +74,23 @@ const ForgotPassword = () => {
               )}
 
               <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label htmlFor="username" className="label">
+                    Username
+                  </label>
+                  <input
+                    id="username"
+                    name="username"
+                    type="text"
+                    autoComplete="username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="input"
+                    placeholder="Your username"
+                    required
+                    autoFocus
+                  />
+                </div>
                 <div>
                   <label htmlFor="email" className="label">
                     Email
@@ -81,11 +105,10 @@ const ForgotPassword = () => {
                     className="input"
                     placeholder="you@example.com"
                     required
-                    autoFocus
                   />
                 </div>
                 <button type="submit" disabled={loading} className="btn-primary w-full">
-                  {loading ? 'Sending...' : 'Send Instructions'}
+                  {loading ? 'Checking...' : 'Continue'}
                 </button>
               </form>
 
