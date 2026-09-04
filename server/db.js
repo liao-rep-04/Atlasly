@@ -51,6 +51,21 @@ export const initializeDatabase = async () => {
     await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS gender VARCHAR(20)`);
     console.log('[DB] ✓ Users columns migrated');
 
+    // Password reset tokens: only a SHA-256 hash of the token is stored, so
+    // a database leak alone can't be used to reset anyone's password —
+    // the raw token exists only in the emailed link. Single-use, expires.
+    await query(`
+      CREATE TABLE IF NOT EXISTS password_resets (
+        id VARCHAR(255) PRIMARY KEY,
+        user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+        token_hash VARCHAR(255) NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        used_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('[DB] ✓ Password resets table created/verified');
+
     // Trips table
     await query(`
       CREATE TABLE IF NOT EXISTS trips (
@@ -215,6 +230,8 @@ export const initializeDatabase = async () => {
     await query('CREATE INDEX IF NOT EXISTS idx_trip_groups_trip ON trip_groups(trip_id)');
     await query('CREATE INDEX IF NOT EXISTS idx_trip_group_members_group ON trip_group_members(group_id)');
     await query('CREATE INDEX IF NOT EXISTS idx_trip_items_group ON trip_items(group_id)');
+    await query('CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token_hash)');
+    await query('CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id)');
     console.log('[DB] ✓ Indexes created/verified');
 
     console.log('[DB] ✅ Database initialization complete');

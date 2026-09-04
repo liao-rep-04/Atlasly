@@ -36,6 +36,12 @@ services:
         value: '5242880'
       - key: ANTHROPIC_API_KEY
         sync: false # set manually in the dashboard — never commit the key
+      - key: APP_URL
+        value: https://atlasly.onrender.com # used to build password-reset links
+      - key: RESEND_API_KEY
+        sync: false # optional — without it, reset emails just log to the server console
+      - key: MAIL_FROM
+        value: Atlasly <onboarding@resend.dev>
 
 databases:
   - name: atlasly-db

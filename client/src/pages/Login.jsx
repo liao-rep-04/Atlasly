@@ -2,9 +2,16 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
+const REMEMBERED_USERNAME_KEY = 'atlasly_remembered_username';
+
 const Login = () => {
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState(
+    () => localStorage.getItem(REMEMBERED_USERNAME_KEY) || ''
+  );
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(
+    () => Boolean(localStorage.getItem(REMEMBERED_USERNAME_KEY))
+  );
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -16,9 +23,14 @@ const Login = () => {
     setError('');
     setLoading(true);
 
-    const result = await login(username, password);
+    const result = await login(username, password, remember);
 
     if (result.success) {
+      if (remember) {
+        localStorage.setItem(REMEMBERED_USERNAME_KEY, username);
+      } else {
+        localStorage.removeItem(REMEMBERED_USERNAME_KEY);
+      }
       navigate('/dashboard');
     } else {
       setError(result.error);
@@ -45,14 +57,16 @@ const Login = () => {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
             <div>
               <label htmlFor="username" className="label">
                 Username
               </label>
               <input
                 id="username"
+                name="username"
                 type="text"
+                autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="input"
@@ -68,13 +82,33 @@ const Login = () => {
               </label>
               <input
                 id="password"
+                name="password"
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="input"
                 placeholder="Enter your password"
                 required
               />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
+                  className="rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+                />
+                Remember me
+              </label>
+              <Link
+                to="/forgot-password"
+                className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+              >
+                Forgot username or password?
+              </Link>
             </div>
 
             <button

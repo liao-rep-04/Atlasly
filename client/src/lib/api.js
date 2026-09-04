@@ -20,11 +20,16 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Handle 401 errors globally
+// A 401 on an *authenticated* request means the session expired — clear it
+// and bounce to login. A 401 on a request with no token (wrong password on
+// /auth/login, an expired reset link, etc.) is just a normal rejected
+// request; force-navigating away would blow past the page before it can
+// show the error, so only the token case triggers the redirect.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const hadToken = Boolean(error.config?.headers?.Authorization);
+    if (error.response?.status === 401 && hadToken) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';
@@ -34,8 +39,13 @@ api.interceptors.response.use(
 );
 
 // Auth endpoints
-export const login = (username, password) =>
-  api.post('/auth/login', { username, password });
+export const login = (username, password, remember) =>
+  api.post('/auth/login', { username, password, remember });
+export const forgotPassword = (email) => api.post('/auth/forgot', { email });
+export const validateResetToken = (token) =>
+  api.get('/auth/reset/validate', { params: { token } });
+export const resetPassword = (token, password) =>
+  api.post('/auth/reset', { token, password });
 
 // Registration is multipart: includes a required selfie image + gender
 export const register = ({ username, email, password, fullName, gender, selfie }) => {

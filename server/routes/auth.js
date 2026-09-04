@@ -1,5 +1,5 @@
 import express from 'express';
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes, createHash } from 'crypto';
 import { query } from '../db.js';
 import {
   hashPassword,
@@ -10,6 +10,7 @@ import {
 } from '../utils/auth.js';
 import { imageUpload, removeUpload } from '../utils/imageUpload.js';
 import { authenticate } from '../middleware/auth.js';
+import { sendMail } from '../utils/mailer.js';
 
 const router = express.Router();
 
@@ -165,7 +166,7 @@ router.post('/login', async (req, res) => {
   console.log('[Auth Route] POST /login - Login attempt');
 
   try {
-    const { username, password } = req.body;
+    const { username, password, remember } = req.body;
 
     if (!username || !password) {
       console.log('[Auth Route] ✗ Missing credentials');
@@ -195,17 +196,150 @@ router.post('/login', async (req, res) => {
 
     console.log(`[Auth Route] ✓ Password verified for user: ${user.id}`);
 
-    // Generate token
-    const token = generateToken({
-      id: user.id,
-      username: user.username,
-      email: user.email,
-    });
+    // "Remember me" trades a longer session for not re-logging-in as often;
+    // it never stores the password itself — that's the browser's job
+    // (see the autoComplete attributes on the login form)
+    const token = generateToken(
+      { id: user.id, username: user.username, email: user.email },
+      remember ? { expiresIn: '30d' } : {}
+    );
 
     console.log('[Auth Route] ✅ Login successful');
     res.json({ token, user: toPublicUser(user) });
   } catch (error) {
     console.error('[Auth Route] ❌ Login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+const hashToken = (token) => createHash('sha256').update(token).digest('hex');
+
+/**
+ * POST /api/auth/forgot
+ * Body: { email }. Looks up the account and, if one exists, emails both
+ * the username and a password-reset link. Always responds with the same
+ * generic message regardless of whether the email matched an account —
+ * revealing that would let an attacker enumerate registered emails.
+ */
+router.post('/forgot', async (req, res) => {
+  const genericResponse = {
+    message: "If an account exists for that email, we've sent instructions.",
+  };
+  try {
+    const { email } = req.body;
+    if (!email || !isValidEmail(email)) {
+      // Still generic — an invalid-format email can't match an account anyway
+      return res.json(genericResponse);
+    }
+
+    const result = await query('SELECT id, username FROM users WHERE email = $1', [
+      email.trim(),
+    ]);
+    if (result.rows.length === 0) {
+      console.log('[Auth Route] ⊘ Forgot-password request for unknown email (silent)');
+      return res.json(genericResponse);
+    }
+    const user = result.rows[0];
+
+    const rawToken = randomBytes(32).toString('hex');
+    await query(
+      `INSERT INTO password_resets (id, user_id, token_hash, expires_at)
+       VALUES ($1, $2, $3, $4)`,
+      [randomUUID(), user.id, hashToken(rawToken), new Date(Date.now() + RESET_TOKEN_TTL_MS)]
+    );
+
+    const appUrl = process.env.APP_URL || 'http://localhost:5173';
+    const resetLink = `${appUrl}/reset-password?token=${rawToken}`;
+    await sendMail({
+      to: email.trim(),
+      subject: 'Reset your Atlasly password',
+      text:
+        `Your Atlasly username is: ${user.username}\n\n` +
+        `To reset your password, visit this link (valid for 1 hour):\n${resetLink}\n\n` +
+        `If you didn't request this, you can safely ignore this email.`,
+      html:
+        `<p>Your Atlasly username is: <strong>${user.username}</strong></p>` +
+        `<p><a href="${resetLink}">Click here to reset your password</a> (valid for 1 hour).</p>` +
+        `<p>If you didn't request this, you can safely ignore this email.</p>`,
+    });
+
+    console.log(`[Auth Route] ✓ Password reset requested for user: ${user.id}`);
+    res.json(genericResponse);
+  } catch (error) {
+    console.error('[Auth Route] ❌ Forgot-password error:', error);
+    // Still generic on failure — don't leak whether the account exists
+    res.json(genericResponse);
+  }
+});
+
+/**
+ * GET /api/auth/reset/validate?token=...
+ * Lets the reset-password page show an upfront "this link expired" state
+ * instead of only failing on submit.
+ */
+router.get('/reset/validate', async (req, res) => {
+  try {
+    const { token } = req.query;
+    if (!token) return res.json({ valid: false });
+
+    const result = await query(
+      `SELECT id FROM password_resets
+       WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW()`,
+      [hashToken(token)]
+    );
+    res.json({ valid: result.rows.length > 0 });
+  } catch (error) {
+    console.error('[Auth Route] ❌ Reset validate error:', error);
+    res.json({ valid: false });
+  }
+});
+
+/**
+ * POST /api/auth/reset
+ * Body: { token, password }. Applies a new password for the token's
+ * account and burns the token (and any other outstanding ones for that
+ * account, so an old unread reset email can't be replayed afterward).
+ */
+router.post('/reset', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) {
+      return res.status(400).json({ error: 'Token and new password are required' });
+    }
+
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({
+        error: 'Password does not meet requirements',
+        details: passwordValidation.errors,
+      });
+    }
+
+    const result = await query(
+      `SELECT id, user_id FROM password_resets
+       WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW()`,
+      [hashToken(token)]
+    );
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'This reset link is invalid or has expired' });
+    }
+    const reset = result.rows[0];
+
+    const passwordHash = await hashPassword(password);
+    await query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [
+      passwordHash, reset.user_id,
+    ]);
+    await query(
+      `UPDATE password_resets SET used_at = NOW()
+       WHERE user_id = $1 AND used_at IS NULL`,
+      [reset.user_id]
+    );
+
+    console.log(`[Auth Route] ✓ Password reset completed for user: ${reset.user_id}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Auth Route] ❌ Reset error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

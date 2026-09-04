@@ -113,6 +113,7 @@ const Register = () => {
                 id="fullName"
                 name="fullName"
                 type="text"
+                autoComplete="name"
                 value={formData.fullName}
                 onChange={handleChange}
                 className="input"
@@ -128,6 +129,7 @@ const Register = () => {
                 id="username"
                 name="username"
                 type="text"
+                autoComplete="username"
                 value={formData.username}
                 onChange={handleChange}
                 className="input"
@@ -144,6 +146,7 @@ const Register = () => {
                 id="email"
                 name="email"
                 type="email"
+                autoComplete="email"
                 value={formData.email}
                 onChange={handleChange}
                 className="input"
@@ -160,6 +163,7 @@ const Register = () => {
                 id="password"
                 name="password"
                 type="password"
+                autoComplete="new-password"
                 value={formData.password}
                 onChange={handleChange}
                 className="input"
@@ -179,6 +183,7 @@ const Register = () => {
                 id="confirmPassword"
                 name="confirmPassword"
                 type="password"
+                autoComplete="new-password"
                 value={formData.confirmPassword}
                 onChange={handleChange}
                 className="input"

@@ -41,13 +41,15 @@ export const comparePassword = async (password, hash) => {
 /**
  * Generate JWT token
  * @param {Object} payload - Token payload
+ * @param {Object} [options] - e.g. { expiresIn } to override the default TTL
+ *   ("remember me" requests a longer-lived session instead of a shorter one)
  * @returns {string} - JWT token
  */
-export const generateToken = (payload) => {
+export const generateToken = (payload, options = {}) => {
   try {
     console.log('[Auth] Generating JWT token for user:', payload.id);
     const token = jwt.sign(payload, process.env.JWT_SECRET, {
-      expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+      expiresIn: options.expiresIn || process.env.JWT_EXPIRES_IN || '7d',
     });
     console.log('[Auth] ✓ JWT token generated successfully');
     return token;
