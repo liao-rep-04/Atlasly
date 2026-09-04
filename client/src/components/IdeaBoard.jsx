@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Lightbulb, Plus, X, Check, Trash2, MapPin, Loader2 } from 'lucide-react';
 import PlaceSearch from './PlaceSearch';
-import { STOP_TYPES, typeEmoji } from '../lib/tripConstants';
+import { STOP_TYPES, DYNAMIC_EVENT_ICONS, stopIcon, stopLabel } from '../lib/tripConstants';
 import { getIdeas, createIdea, promoteIdea, deleteIdea } from '../lib/api';
 
 const emptyForm = {
   type: 'experience', name: '', description: '',
   location_name: '', latitude: '', longitude: '', cost: '',
+  icon: DYNAMIC_EVENT_ICONS[0], custom_label: '',
 };
 
 /**
@@ -47,6 +48,8 @@ const IdeaBoard = ({ tripId, currentUserId, isOwner, onPromoted }) => {
         latitude: form.latitude === '' ? null : parseFloat(form.latitude),
         longitude: form.longitude === '' ? null : parseFloat(form.longitude),
         cost: form.cost === '' ? null : parseFloat(form.cost),
+        icon: form.type === 'dynamic' ? form.icon : null,
+        custom_label: form.type === 'dynamic' ? form.custom_label.trim() || null : null,
       });
       setIdeas((prev) => [res.data.idea, ...prev]);
       setForm(emptyForm);
@@ -159,6 +162,45 @@ const IdeaBoard = ({ tripId, currentUserId, isOwner, onPromoted }) => {
                 />
               </div>
             </div>
+            {form.type === 'dynamic' && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1">
+                    What do you call this kind of stop? *
+                  </label>
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="e.g. Cruise, Music Festival, Ski Trip"
+                    value={form.custom_label}
+                    onChange={(e) => setForm({ ...form, custom_label: e.target.value })}
+                    required={form.type === 'dynamic'}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1">
+                    Map icon
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {DYNAMIC_EVENT_ICONS.map((icon) => (
+                      <button
+                        key={icon}
+                        type="button"
+                        className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg transition-colors ${
+                          form.icon === icon
+                            ? 'bg-amber-500 ring-2 ring-offset-1 ring-amber-400'
+                            : 'bg-white hover:bg-amber-100 border border-neutral-200'
+                        }`}
+                        onClick={() => setForm({ ...form, icon })}
+                        title={icon}
+                      >
+                        {icon}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-neutral-700 mb-1">
                 Why it's worth it
@@ -202,7 +244,7 @@ const IdeaBoard = ({ tripId, currentUserId, isOwner, onPromoted }) => {
               <div key={idea.id} className="card flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <h3 className="font-semibold text-neutral-900 pr-2">
-                    {typeEmoji(idea.type)} {idea.name}
+                    {stopIcon(idea)} {idea.name}
                   </h3>
                   {parseFloat(idea.cost) > 0 && (
                     <span className="text-sm font-semibold text-primary-600 flex-shrink-0">
@@ -210,6 +252,11 @@ const IdeaBoard = ({ tripId, currentUserId, isOwner, onPromoted }) => {
                     </span>
                   )}
                 </div>
+                {idea.type === 'dynamic' && (
+                  <span className="inline-block text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-100 rounded-full px-2 py-0.5 mb-2">
+                    {stopLabel(idea)}
+                  </span>
+                )}
                 {idea.location_name && (
                   <p className="text-xs text-neutral-500 mb-2 line-clamp-1 flex items-center gap-1">
                     <MapPin className="w-3 h-3 flex-shrink-0" />

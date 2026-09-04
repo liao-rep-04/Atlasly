@@ -2,18 +2,22 @@ import { useRef, useState } from 'react';
 import {
   Edit, Trash2, ChevronUp, ChevronDown, Camera, X, Loader2, Sparkles, GripVertical,
 } from 'lucide-react';
-import { typeEmoji, transportEmoji, TRANSPORT_MODES } from '../lib/tripConstants';
+import { stopIcon, stopLabel, transportEmoji, TRANSPORT_MODES } from '../lib/tripConstants';
+import StopActivities from './StopActivities';
 
 /**
  * One stop in the itinerary list: details, photo strip with upload,
- * edit/delete/reorder controls. The transport badge above the card shows
- * how you get here from the previous stop. `dragHandleProps` (from
- * dnd-kit) is spread onto the grip icon for pointer/touch drag-reorder;
- * the up/down buttons remain as a keyboard/no-drag fallback.
+ * edit/delete/reorder controls, and (for dynamic events) its own nested
+ * activities. The transport badge above the card shows how you get here
+ * from the previous stop. `dragHandleProps` (from dnd-kit) is spread onto
+ * the grip icon for pointer/touch drag-reorder; the up/down buttons remain
+ * as a keyboard/no-drag fallback. When `group` is set, the card is framed
+ * in that group's color to mark it as part of a breakout sub-itinerary.
  */
 const StopCard = ({
-  item, index, isFirst, isLast,
+  item, index, isFirst, isLast, group,
   onEdit, onDelete, onMove, onUploadPhoto, onDeletePhoto, onHover, dragHandleProps,
+  onCreateActivity, onToggleActivityStatus, onDeleteActivity,
 }) => {
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
@@ -33,6 +37,7 @@ const StopCard = ({
   };
 
   const transportLabel = TRANSPORT_MODES.find((m) => m.value === item.transport_mode)?.label;
+  const isDynamic = item.type === 'dynamic';
 
   return (
     <div>
@@ -46,6 +51,11 @@ const StopCard = ({
 
       <div
         className="card hover:shadow-lg transition-shadow"
+        style={
+          group
+            ? { borderLeft: `4px solid ${group.color}`, backgroundColor: `${group.color}0d` }
+            : undefined
+        }
         onMouseEnter={() => onHover?.(item)}
         onMouseLeave={() => onHover?.(null)}
       >
@@ -87,10 +97,25 @@ const StopCard = ({
             <div className="flex items-start justify-between mb-1">
               <div>
                 <h3 className="font-semibold text-neutral-900">
-                  {typeEmoji(item.type)} {item.name}
+                  {stopIcon(item)} {item.name}
                 </h3>
+                <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                  {isDynamic && (
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-100 rounded-full px-2 py-0.5">
+                      {stopLabel(item)}
+                    </span>
+                  )}
+                  {group && (
+                    <span
+                      className="text-[10px] font-semibold uppercase tracking-wide text-white rounded-full px-2 py-0.5"
+                      style={{ backgroundColor: group.color }}
+                    >
+                      {group.name}
+                    </span>
+                  )}
+                </div>
                 {item.location_name && (
-                  <p className="text-xs text-neutral-500 line-clamp-1">
+                  <p className="text-xs text-neutral-500 line-clamp-1 mt-0.5">
                     📍 {item.location_name}
                   </p>
                 )}
@@ -175,6 +200,16 @@ const StopCard = ({
                 onChange={handleFiles}
               />
             </div>
+
+            {/* Dynamic events get their own nested agenda of sub-activities */}
+            {isDynamic && (
+              <StopActivities
+                activities={item.activities || []}
+                onCreate={(data) => onCreateActivity(item.id, data)}
+                onToggleStatus={(activity) => onToggleActivityStatus(item.id, activity)}
+                onDelete={(activity) => onDeleteActivity(item.id, activity)}
+              />
+            )}
           </div>
         </div>
       </div>

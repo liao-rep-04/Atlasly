@@ -85,6 +85,30 @@ export const initializeDatabase = async () => {
     `);
     console.log('[DB] ✓ Trip members table created/verified');
 
+    // Trip groups: a sub-itinerary within a trip for a person or subset of
+    // travelers doing their own thing (e.g. half the group goes hiking).
+    // Stops tagged with a group_id are framed/mapped in the group's color;
+    // stops with no group belong to the shared base trip, unchanged.
+    await query(`
+      CREATE TABLE IF NOT EXISTS trip_groups (
+        id VARCHAR(255) PRIMARY KEY,
+        trip_id VARCHAR(255) REFERENCES trips(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        color VARCHAR(20) NOT NULL DEFAULT '#8b5cf6',
+        created_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await query(`
+      CREATE TABLE IF NOT EXISTS trip_group_members (
+        id VARCHAR(255) PRIMARY KEY,
+        group_id VARCHAR(255) REFERENCES trip_groups(id) ON DELETE CASCADE,
+        user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE (group_id, user_id)
+      )
+    `);
+    console.log('[DB] ✓ Trip groups tables created/verified');
+
     // Trip items table (experiences, dining, hotels, transportation)
     await query(`
       CREATE TABLE IF NOT EXISTS trip_items (
@@ -112,7 +136,34 @@ export const initializeDatabase = async () => {
     // Columns added after initial release (safe to re-run)
     await query(`ALTER TABLE trip_items ADD COLUMN IF NOT EXISTS fun_facts TEXT`);
     await query(`ALTER TABLE trip_items ADD COLUMN IF NOT EXISTS transport_mode VARCHAR(50)`);
+    // Dynamic events: type = 'dynamic' pairs a user-chosen title (custom_label,
+    // e.g. "Cruise") with a map-marker emoji (icon, e.g. "🛳️") instead of the
+    // fixed experience/dining/hotel/transportation vocabulary
+    await query(`ALTER TABLE trip_items ADD COLUMN IF NOT EXISTS icon VARCHAR(10)`);
+    await query(`ALTER TABLE trip_items ADD COLUMN IF NOT EXISTS custom_label VARCHAR(100)`);
+    // Optional sub-group this stop belongs to (NULL = shared base trip)
+    await query(`ALTER TABLE trip_items ADD COLUMN IF NOT EXISTS group_id VARCHAR(255) REFERENCES trip_groups(id) ON DELETE SET NULL`);
     console.log('[DB] ✓ Trip items columns migrated');
+
+    // Sub-activities tied to one stop (e.g. onboard events for a cruise, or
+    // excursions at a port). Each is independently priced/located and marked
+    // planned or optional — a lighter-weight agenda nested inside the stop.
+    await query(`
+      CREATE TABLE IF NOT EXISTS trip_item_activities (
+        id VARCHAR(255) PRIMARY KEY,
+        trip_item_id VARCHAR(255) REFERENCES trip_items(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        location_name VARCHAR(255),
+        cost DECIMAL(10, 2),
+        currency VARCHAR(10) DEFAULT 'USD',
+        status VARCHAR(20) NOT NULL DEFAULT 'planned',
+        order_index INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('[DB] ✓ Trip item activities table created/verified');
 
     // Idea board: proposals from any trip member that haven't (yet) been
     // promoted into the itinerary. Kept as its own table rather than a
@@ -134,6 +185,9 @@ export const initializeDatabase = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    // Ideas can also be proposed as dynamic events, so they carry the same fields
+    await query(`ALTER TABLE trip_ideas ADD COLUMN IF NOT EXISTS icon VARCHAR(10)`);
+    await query(`ALTER TABLE trip_ideas ADD COLUMN IF NOT EXISTS custom_label VARCHAR(100)`);
     console.log('[DB] ✓ Trip ideas table created/verified');
 
     // Photos table
@@ -157,6 +211,10 @@ export const initializeDatabase = async () => {
     await query('CREATE INDEX IF NOT EXISTS idx_trip_members_user ON trip_members(user_id, status)');
     await query('CREATE INDEX IF NOT EXISTS idx_trip_members_trip ON trip_members(trip_id, status)');
     await query('CREATE INDEX IF NOT EXISTS idx_trip_ideas_trip ON trip_ideas(trip_id)');
+    await query('CREATE INDEX IF NOT EXISTS idx_trip_item_activities_item ON trip_item_activities(trip_item_id)');
+    await query('CREATE INDEX IF NOT EXISTS idx_trip_groups_trip ON trip_groups(trip_id)');
+    await query('CREATE INDEX IF NOT EXISTS idx_trip_group_members_group ON trip_group_members(group_id)');
+    await query('CREATE INDEX IF NOT EXISTS idx_trip_items_group ON trip_items(group_id)');
     console.log('[DB] ✓ Indexes created/verified');
 
     console.log('[DB] ✅ Database initialization complete');

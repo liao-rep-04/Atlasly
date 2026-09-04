@@ -226,6 +226,21 @@ router.get('/:id', async (req, res) => {
       [trip.id]
     );
 
+    // Sub-groups within this trip, each with its member list — client joins
+    // these onto items by group_id rather than the server denormalizing
+    const groups = await query(
+      `SELECT g.id, g.name, g.color, g.created_by,
+              COALESCE(
+                json_agg(gm.user_id) FILTER (WHERE gm.user_id IS NOT NULL), '[]'
+              ) AS member_ids
+       FROM trip_groups g
+       LEFT JOIN trip_group_members gm ON gm.group_id = g.id
+       WHERE g.trip_id = $1
+       GROUP BY g.id
+       ORDER BY g.created_at`,
+      [trip.id]
+    );
+
     const items = await query(
       'SELECT * FROM trip_items WHERE trip_id = $1 ORDER BY order_index, created_at',
       [trip.id]
@@ -238,21 +253,34 @@ router.get('/:id', async (req, res) => {
        ORDER BY p.order_index, p.created_at`,
       [trip.id]
     );
-
     const photosByItem = {};
     for (const photo of photos.rows) {
       (photosByItem[photo.trip_item_id] ||= []).push(photo);
     }
 
-    const itemsWithPhotos = items.rows.map((item) => ({
+    const activities = await query(
+      `SELECT a.* FROM trip_item_activities a
+       JOIN trip_items ti ON ti.id = a.trip_item_id
+       WHERE ti.trip_id = $1
+       ORDER BY a.order_index, a.created_at`,
+      [trip.id]
+    );
+    const activitiesByItem = {};
+    for (const activity of activities.rows) {
+      (activitiesByItem[activity.trip_item_id] ||= []).push(activity);
+    }
+
+    const itemsWithExtras = items.rows.map((item) => ({
       ...item,
       photos: photosByItem[item.id] || [],
+      activities: activitiesByItem[item.id] || [],
     }));
 
     res.json({
       trip: { ...trip, is_owner: trip.user_id === req.user.id },
       members: members.rows,
-      items: itemsWithPhotos,
+      groups: groups.rows,
+      items: itemsWithExtras,
     });
   } catch (error) {
     console.error('[Trips Route] ❌ Get error:', error);
@@ -309,6 +337,18 @@ router.delete('/:id', async (req, res) => {
 });
 
 /**
+ * Verify a group_id (if provided) belongs to this trip; returns a clean
+ * value to store (the id, or null). Prevents cross-trip group assignment.
+ */
+const resolveGroupId = async (tripId, groupId) => {
+  if (!groupId) return null;
+  const result = await query('SELECT id FROM trip_groups WHERE id = $1 AND trip_id = $2', [
+    groupId, tripId,
+  ]);
+  return result.rows.length > 0 ? groupId : null;
+};
+
+/**
  * POST /api/trips/:id/items
  * Add an item (location/stop) to a trip
  */
@@ -320,6 +360,7 @@ router.post('/:id/items', async (req, res) => {
     const {
       type, name, description, location_name, latitude, longitude,
       cost, currency, date, time, notes, fun_facts, transport_mode,
+      icon, custom_label, group_id,
     } = req.body;
 
     if (!name || !name.trim()) {
@@ -330,24 +371,26 @@ router.post('/:id/items', async (req, res) => {
       'SELECT COALESCE(MAX(order_index), -1) + 1 AS next FROM trip_items WHERE trip_id = $1',
       [trip.id]
     );
+    const resolvedGroupId = await resolveGroupId(trip.id, group_id);
 
     const id = randomUUID();
     const result = await query(
       `INSERT INTO trip_items
          (id, trip_id, type, name, description, location_name, latitude, longitude,
-          cost, currency, date, time, notes, fun_facts, transport_mode, order_index)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+          cost, currency, date, time, notes, fun_facts, transport_mode, order_index,
+          icon, custom_label, group_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
        RETURNING *`,
       [
         id, trip.id, type || 'experience', name.trim(), description || null,
         location_name || null, latitude ?? null, longitude ?? null,
         cost ?? null, currency || 'USD', date || null, time || null,
         notes || null, fun_facts || null, transport_mode || null,
-        orderResult.rows[0].next,
+        orderResult.rows[0].next, icon || null, custom_label || null, resolvedGroupId,
       ]
     );
     console.log(`[Trips Route] ✓ Item created: ${id}`);
-    res.status(201).json({ item: { ...result.rows[0], photos: [] } });
+    res.status(201).json({ item: { ...result.rows[0], photos: [], activities: [] } });
   } catch (error) {
     console.error('[Trips Route] ❌ Item create error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -394,7 +437,7 @@ router.put('/:id/items/:itemId', async (req, res) => {
     const allowed = [
       'type', 'name', 'description', 'location_name', 'latitude', 'longitude',
       'cost', 'currency', 'date', 'time', 'notes', 'fun_facts', 'transport_mode',
-      'order_index',
+      'order_index', 'icon', 'custom_label',
     ];
     const updates = [];
     const values = [req.params.itemId, trip.id];
@@ -403,6 +446,11 @@ router.put('/:id/items/:itemId', async (req, res) => {
         values.push(req.body[field]);
         updates.push(`${field} = $${values.length}`);
       }
+    }
+    // Validated separately: must reference a group on this same trip
+    if ('group_id' in req.body) {
+      values.push(await resolveGroupId(trip.id, req.body.group_id));
+      updates.push(`group_id = $${values.length}`);
     }
     if (updates.length === 0) {
       return res.status(400).json({ error: 'No fields to update' });
@@ -459,6 +507,7 @@ router.post('/:id/ideas', async (req, res) => {
 
     const {
       type, name, description, location_name, latitude, longitude, cost, currency,
+      icon, custom_label,
     } = req.body;
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'Idea name is required' });
@@ -468,13 +517,14 @@ router.post('/:id/ideas', async (req, res) => {
     const result = await query(
       `INSERT INTO trip_ideas
          (id, trip_id, proposed_by, type, name, description, location_name,
-          latitude, longitude, cost, currency)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          latitude, longitude, cost, currency, icon, custom_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING *`,
       [
         id, trip.id, req.user.id, type || 'experience', name.trim(),
         description || null, location_name || null, latitude ?? null,
         longitude ?? null, cost ?? null, currency || 'USD',
+        icon || null, custom_label || null,
       ]
     );
     console.log(`[Trips Route] ✓ Idea proposed: ${id}`);
@@ -514,18 +564,19 @@ router.post('/:id/ideas/:ideaId/promote', async (req, res) => {
     const result = await query(
       `INSERT INTO trip_items
          (id, trip_id, type, name, description, location_name, latitude, longitude,
-          cost, currency, order_index)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          cost, currency, order_index, icon, custom_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING *`,
       [
         itemId, trip.id, i.type, i.name, i.description, i.location_name,
         i.latitude, i.longitude, i.cost, i.currency, orderResult.rows[0].next,
+        i.icon, i.custom_label,
       ]
     );
 
     await query('DELETE FROM trip_ideas WHERE id = $1', [i.id]);
     console.log(`[Trips Route] ✓ Idea promoted to item: ${i.id} -> ${itemId}`);
-    res.status(201).json({ item: { ...result.rows[0], photos: [] } });
+    res.status(201).json({ item: { ...result.rows[0], photos: [], activities: [] } });
   } catch (error) {
     console.error('[Trips Route] ❌ Idea promote error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -579,6 +630,260 @@ router.delete('/:id/items/:itemId', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('[Trips Route] ❌ Item delete error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Verify the item exists on this (already access-checked) trip.
+ * Returns the item id, or null (response already sent).
+ */
+const loadItemOnTrip = async (tripId, itemId, res) => {
+  const result = await query('SELECT id FROM trip_items WHERE id = $1 AND trip_id = $2', [
+    itemId, tripId,
+  ]);
+  if (result.rows.length === 0) {
+    res.status(404).json({ error: 'Stop not found' });
+    return null;
+  }
+  return result.rows[0].id;
+};
+
+const ACTIVITY_STATUSES = ['planned', 'optional'];
+
+/**
+ * POST /api/trips/:id/items/:itemId/activities
+ * Add a sub-activity tied to a stop (e.g. an onboard event for a cruise)
+ */
+router.post('/:id/items/:itemId/activities', async (req, res) => {
+  try {
+    const trip = await loadAccessibleTrip(req.params.id, req.user.id, res);
+    if (!trip) return;
+    const itemId = await loadItemOnTrip(trip.id, req.params.itemId, res);
+    if (!itemId) return;
+
+    const { name, description, location_name, cost, currency, status } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Activity name is required' });
+    }
+    const resolvedStatus = ACTIVITY_STATUSES.includes(status) ? status : 'planned';
+
+    const orderResult = await query(
+      'SELECT COALESCE(MAX(order_index), -1) + 1 AS next FROM trip_item_activities WHERE trip_item_id = $1',
+      [itemId]
+    );
+
+    const id = randomUUID();
+    const result = await query(
+      `INSERT INTO trip_item_activities
+         (id, trip_item_id, name, description, location_name, cost, currency, status, order_index)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING *`,
+      [
+        id, itemId, name.trim(), description || null, location_name || null,
+        cost ?? null, currency || 'USD', resolvedStatus, orderResult.rows[0].next,
+      ]
+    );
+    console.log(`[Trips Route] ✓ Activity created: ${id}`);
+    res.status(201).json({ activity: result.rows[0] });
+  } catch (error) {
+    console.error('[Trips Route] ❌ Activity create error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * PUT /api/trips/:id/items/:itemId/activities/:activityId
+ * Update a sub-activity (name, price, location, or planned/optional status)
+ */
+router.put('/:id/items/:itemId/activities/:activityId', async (req, res) => {
+  try {
+    const trip = await loadAccessibleTrip(req.params.id, req.user.id, res);
+    if (!trip) return;
+    const itemId = await loadItemOnTrip(trip.id, req.params.itemId, res);
+    if (!itemId) return;
+
+    const allowed = ['name', 'description', 'location_name', 'cost', 'currency'];
+    const updates = [];
+    const values = [req.params.activityId, itemId];
+    for (const field of allowed) {
+      if (field in req.body) {
+        values.push(req.body[field]);
+        updates.push(`${field} = $${values.length}`);
+      }
+    }
+    if ('status' in req.body) {
+      if (!ACTIVITY_STATUSES.includes(req.body.status)) {
+        return res.status(400).json({ error: 'status must be "planned" or "optional"' });
+      }
+      values.push(req.body.status);
+      updates.push(`status = $${values.length}`);
+    }
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    const result = await query(
+      `UPDATE trip_item_activities SET ${updates.join(', ')}, updated_at = NOW()
+       WHERE id = $1 AND trip_item_id = $2
+       RETURNING *`,
+      values
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Activity not found' });
+    }
+    res.json({ activity: result.rows[0] });
+  } catch (error) {
+    console.error('[Trips Route] ❌ Activity update error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * DELETE /api/trips/:id/items/:itemId/activities/:activityId
+ */
+router.delete('/:id/items/:itemId/activities/:activityId', async (req, res) => {
+  try {
+    const trip = await loadAccessibleTrip(req.params.id, req.user.id, res);
+    if (!trip) return;
+    const itemId = await loadItemOnTrip(trip.id, req.params.itemId, res);
+    if (!itemId) return;
+
+    const result = await query(
+      'DELETE FROM trip_item_activities WHERE id = $1 AND trip_item_id = $2 RETURNING id',
+      [req.params.activityId, itemId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Activity not found' });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Trips Route] ❌ Activity delete error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Resolve a list of candidate user ids to only those who actually belong
+ * to this trip (owner or accepted member) — silently drops invalid ids
+ * rather than erroring, so a stale client-side member list can't break the request.
+ */
+const resolveTripMemberIds = async (trip, candidateIds) => {
+  if (!Array.isArray(candidateIds) || candidateIds.length === 0) return [];
+  const accepted = await query(
+    `SELECT user_id FROM trip_members WHERE trip_id = $1 AND status = 'accepted'`,
+    [trip.id]
+  );
+  const validIds = new Set([trip.user_id, ...accepted.rows.map((r) => r.user_id)]);
+  return [...new Set(candidateIds)].filter((id) => validIds.has(id));
+};
+
+/**
+ * POST /api/trips/:id/groups
+ * Create a sub-group (a person or subset of travelers doing their own thing)
+ */
+router.post('/:id/groups', async (req, res) => {
+  try {
+    const trip = await loadAccessibleTrip(req.params.id, req.user.id, res);
+    if (!trip) return;
+
+    const { name, color, member_ids } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Group name is required' });
+    }
+
+    const id = randomUUID();
+    const result = await query(
+      `INSERT INTO trip_groups (id, trip_id, name, color, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [id, trip.id, name.trim(), color || '#8b5cf6', req.user.id]
+    );
+
+    const memberIds = await resolveTripMemberIds(trip, member_ids);
+    for (const userId of memberIds) {
+      await query(
+        `INSERT INTO trip_group_members (id, group_id, user_id)
+         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+        [randomUUID(), id, userId]
+      );
+    }
+
+    console.log(`[Trips Route] ✓ Group created: ${id}`);
+    res.status(201).json({ group: { ...result.rows[0], member_ids: memberIds } });
+  } catch (error) {
+    console.error('[Trips Route] ❌ Group create error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * PUT /api/trips/:id/groups/:groupId
+ * Update a group's name/color and/or replace its member list
+ */
+router.put('/:id/groups/:groupId', async (req, res) => {
+  try {
+    const trip = await loadAccessibleTrip(req.params.id, req.user.id, res);
+    if (!trip) return;
+
+    const { name, color, member_ids } = req.body;
+    const result = await query(
+      `UPDATE trip_groups SET
+         name = COALESCE($3, name),
+         color = COALESCE($4, color)
+       WHERE id = $1 AND trip_id = $2
+       RETURNING *`,
+      [req.params.groupId, trip.id, name || null, color || null]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Group not found' });
+    }
+
+    let memberIds;
+    if (Array.isArray(member_ids)) {
+      memberIds = await resolveTripMemberIds(trip, member_ids);
+      await query('DELETE FROM trip_group_members WHERE group_id = $1', [req.params.groupId]);
+      for (const userId of memberIds) {
+        await query(
+          `INSERT INTO trip_group_members (id, group_id, user_id)
+           VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+          [randomUUID(), req.params.groupId, userId]
+        );
+      }
+    } else {
+      const existing = await query(
+        'SELECT user_id FROM trip_group_members WHERE group_id = $1',
+        [req.params.groupId]
+      );
+      memberIds = existing.rows.map((r) => r.user_id);
+    }
+
+    res.json({ group: { ...result.rows[0], member_ids: memberIds } });
+  } catch (error) {
+    console.error('[Trips Route] ❌ Group update error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * DELETE /api/trips/:id/groups/:groupId
+ * Remove a group (its stops fall back to the shared base trip, unassigned)
+ */
+router.delete('/:id/groups/:groupId', async (req, res) => {
+  try {
+    const trip = await loadAccessibleTrip(req.params.id, req.user.id, res);
+    if (!trip) return;
+
+    const result = await query(
+      'DELETE FROM trip_groups WHERE id = $1 AND trip_id = $2 RETURNING id',
+      [req.params.groupId, trip.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Group not found' });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Trips Route] ❌ Group delete error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

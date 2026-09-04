@@ -2,6 +2,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents 
 import { useEffect } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { stopLabel } from '../lib/tripConstants';
 
 // Fix for default marker icons in React-Leaflet
 delete L.Icon.Default.prototype._getIconUrl;
@@ -41,16 +42,21 @@ const MapClickHandler = ({ onMapClick }) => {
   return null;
 };
 
-// Custom marker icons based on trip item type
-const createCustomIcon = (type) => {
-  const colorMap = {
-    experience: '#ef4444', // primary red
-    dining: '#0ea5e9', // secondary blue
-    hotel: '#8b5cf6', // purple
-    transportation: '#10b981', // green
-  };
+const TYPE_COLORS = {
+  experience: '#ef4444', // primary red
+  dining: '#0ea5e9', // secondary blue
+  hotel: '#8b5cf6', // purple
+  transportation: '#10b981', // green
+  dynamic: '#f59e0b', // amber, when not part of a colored group
+};
 
-  const color = colorMap[type?.toLowerCase()] || '#ef4444';
+// Custom marker icon for a trip item. A group assignment's color wins over
+// the type color, since it marks the stop as part of a breakout itinerary.
+// Dynamic-event stops show their chosen emoji instead of the plain dot.
+const createCustomIcon = (item, groupsById) => {
+  const group = item.group_id ? groupsById?.[item.group_id] : null;
+  const color = group?.color || TYPE_COLORS[item.type?.toLowerCase()] || TYPE_COLORS.experience;
+  const emoji = item.type === 'dynamic' && item.icon ? item.icon : null;
 
   return L.divIcon({
     className: 'custom-marker',
@@ -64,17 +70,20 @@ const createCustomIcon = (type) => {
         border: 3px solid white;
         box-shadow: 0 3px 10px rgba(0,0,0,0.3);
         position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       ">
-        <div style="
-          width: 12px;
-          height: 12px;
-          background: white;
-          border-radius: 50%;
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-        "></div>
+        ${
+          emoji
+            ? `<span style="transform: rotate(45deg); font-size: 14px; line-height: 1;">${emoji}</span>`
+            : `<div style="
+                width: 12px;
+                height: 12px;
+                background: white;
+                border-radius: 50%;
+              "></div>`
+        }
       </div>
     `,
     iconSize: [32, 32],
@@ -101,7 +110,9 @@ const draftPinIcon = L.divIcon({
   iconAnchor: [16, 32],
 });
 
-const TripMap = ({ tripItems = [], onItemClick, onMapClick, draftPin }) => {
+const TripMap = ({ tripItems = [], onItemClick, onMapClick, draftPin, groups = [] }) => {
+  const groupsById = Object.fromEntries(groups.map((g) => [g.id, g]));
+
   // Filter items that have valid coordinates (pg returns decimals as strings)
   const locationsWithCoords = tripItems
     .filter((item) => item.latitude != null && item.longitude != null)
@@ -111,10 +122,25 @@ const TripMap = ({ tripItems = [], onItemClick, onMapClick, draftPin }) => {
       longitude: parseFloat(item.longitude),
     }));
 
-  // Create route path from ordered items
-  const routePath = locationsWithCoords
-    .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
-    .map((item) => [item.latitude, item.longitude]);
+  // Ordered stops, for the route line and group-colored sub-segments
+  const orderedStops = [...locationsWithCoords].sort(
+    (a, b) => (a.order_index || 0) - (b.order_index || 0)
+  );
+
+  // One polyline per consecutive pair; segments where both stops share a
+  // group are colored and solid, everything else stays the default dashed
+  // red "shared trip" route
+  const routeSegments = orderedStops.slice(0, -1).map((stop, i) => {
+    const next = orderedStops[i + 1];
+    const sameGroup = stop.group_id && stop.group_id === next.group_id;
+    const group = sameGroup ? groupsById[stop.group_id] : null;
+    return {
+      key: `${stop.id}-${next.id}`,
+      positions: [[stop.latitude, stop.longitude], [next.latitude, next.longitude]],
+      color: group?.color || '#ef4444',
+      dashed: !group,
+    };
+  });
 
   // Calculate total cost
   const totalCost = tripItems.reduce((sum, item) => {
@@ -145,6 +171,11 @@ const TripMap = ({ tripItems = [], onItemClick, onMapClick, draftPin }) => {
     );
   }
 
+  // Only show group swatches for groups that actually have stops on the map
+  const groupsInUse = groups.filter((g) =>
+    locationsWithCoords.some((item) => item.group_id === g.id)
+  );
+
   return (
     <div className="w-full h-full rounded-xl overflow-hidden shadow-lg border border-neutral-200 relative">
       <MapContainer
@@ -168,25 +199,26 @@ const TripMap = ({ tripItems = [], onItemClick, onMapClick, draftPin }) => {
           <Marker position={[draftPin.lat, draftPin.lng]} icon={draftPinIcon} />
         )}
 
-        {/* Route line showing optimal path */}
-        {routePath.length > 1 && (
+        {/* Route line — group legs solid in their color, shared legs dashed red */}
+        {routeSegments.map((segment) => (
           <Polyline
-            positions={routePath}
+            key={segment.key}
+            positions={segment.positions}
             pathOptions={{
-              color: '#ef4444',
-              weight: 3,
-              opacity: 0.7,
-              dashArray: '10, 10',
+              color: segment.color,
+              weight: segment.dashed ? 3 : 4,
+              opacity: segment.dashed ? 0.7 : 0.85,
+              dashArray: segment.dashed ? '10, 10' : null,
             }}
           />
-        )}
+        ))}
 
         {/* Location markers */}
         {locationsWithCoords.map((item, index) => (
           <Marker
             key={item.id}
             position={[item.latitude, item.longitude]}
-            icon={createCustomIcon(item.type)}
+            icon={createCustomIcon(item, groupsById)}
             eventHandlers={{
               click: () => onItemClick && onItemClick(item),
             }}
@@ -197,8 +229,16 @@ const TripMap = ({ tripItems = [], onItemClick, onMapClick, draftPin }) => {
                   <p className="font-semibold text-neutral-900 text-sm">
                     {index + 1}. {item.name}
                   </p>
-                  <p className="text-xs text-neutral-600 mt-1 capitalize">
-                    {item.type}
+                  <p className="text-xs text-neutral-600 mt-1">
+                    {stopLabel(item)}
+                    {item.group_id && groupsById[item.group_id] && (
+                      <span
+                        className="ml-1.5 font-medium"
+                        style={{ color: groupsById[item.group_id].color }}
+                      >
+                        · {groupsById[item.group_id].name}
+                      </span>
+                    )}
                   </p>
                 </div>
                 {item.location_name && (
@@ -253,15 +293,24 @@ const TripMap = ({ tripItems = [], onItemClick, onMapClick, draftPin }) => {
               <div className="w-3 h-3 rounded-full bg-green-500"></div>
               <span className="text-xs text-neutral-600">Transportation</span>
             </div>
-            {routePath.length > 1 && (
+            {routeSegments.some((s) => s.dashed) && (
               <div className="flex items-center gap-2">
                 <div
                   className="w-3 h-0.5 bg-primary-500"
                   style={{ width: '12px' }}
                 ></div>
-                <span className="text-xs text-neutral-600">Route</span>
+                <span className="text-xs text-neutral-600">Shared route</span>
               </div>
             )}
+            {groupsInUse.map((g) => (
+              <div key={g.id} className="flex items-center gap-2">
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: g.color }}
+                ></div>
+                <span className="text-xs text-neutral-600">{g.name}</span>
+              </div>
+            ))}
           </div>
           {totalCost > 0 && (
             <div className="mt-2 pt-2 border-t border-neutral-200">

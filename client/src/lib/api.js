@@ -81,6 +81,20 @@ export const updateTripItem = (tripId, itemId, data) => api.put(`/trips/${tripId
 export const deleteTripItem = (tripId, itemId) => api.delete(`/trips/${tripId}/items/${itemId}`);
 export const reorderTripItems = (tripId, items) => api.put(`/trips/${tripId}/items/reorder`, { items });
 
+// Dynamic-event sub-activity endpoints (nested under a trip item)
+export const createActivity = (tripId, itemId, data) =>
+  api.post(`/trips/${tripId}/items/${itemId}/activities`, data);
+export const updateActivity = (tripId, itemId, activityId, data) =>
+  api.put(`/trips/${tripId}/items/${itemId}/activities/${activityId}`, data);
+export const deleteActivity = (tripId, itemId, activityId) =>
+  api.delete(`/trips/${tripId}/items/${itemId}/activities/${activityId}`);
+
+// Trip group (sub-itinerary) endpoints
+export const createGroup = (tripId, data) => api.post(`/trips/${tripId}/groups`, data);
+export const updateGroup = (tripId, groupId, data) =>
+  api.put(`/trips/${tripId}/groups/${groupId}`, data);
+export const deleteGroup = (tripId, groupId) => api.delete(`/trips/${tripId}/groups/${groupId}`);
+
 // Idea board endpoints
 export const getIdeas = (tripId) => api.get(`/trips/${tripId}/ideas`);
 export const createIdea = (tripId, data) => api.post(`/trips/${tripId}/ideas`, data);

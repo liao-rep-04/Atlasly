@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ChevronDown, ChevronUp, MapPin, Sparkles, Loader2 } from 'lucide-react';
 import PlaceSearch from './PlaceSearch';
 import { getPlaceFunFact } from '../lib/api';
-import { STOP_TYPES, TRANSPORT_MODES } from '../lib/tripConstants';
+import { STOP_TYPES, TRANSPORT_MODES, DYNAMIC_EVENT_ICONS } from '../lib/tripConstants';
 
 const toFormState = (item) => ({
   type: item?.type || 'experience',
@@ -17,6 +17,9 @@ const toFormState = (item) => ({
   notes: item?.notes || '',
   fun_facts: item?.fun_facts || '',
   transport_mode: item?.transport_mode || '',
+  icon: item?.icon || DYNAMIC_EVENT_ICONS[0],
+  custom_label: item?.custom_label || '',
+  group_id: item?.group_id || '',
 });
 
 /**
@@ -24,8 +27,9 @@ const toFormState = (item) => ({
  * Fast path: search a place (fills name + coords) and hit save.
  * Power path: expand "More details" for type, fun facts, transport, cost, etc.
  * `pendingPin` ({lat, lng}) flows in when the user clicks the map.
+ * `groups` (trip sub-groups) lets the stop be assigned to one, if any exist.
  */
-const StopForm = ({ item, pendingPin, isFirstStop, onSubmit, onCancel }) => {
+const StopForm = ({ item, pendingPin, isFirstStop, groups = [], onSubmit, onCancel }) => {
   const [form, setForm] = useState(() => toFormState(item));
   const [showDetails, setShowDetails] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -96,6 +100,10 @@ const StopForm = ({ item, pendingPin, isFirstStop, onSubmit, onCancel }) => {
         date: form.date || null,
         time: form.time || null,
         transport_mode: form.transport_mode || null,
+        // Dynamic-event fields only apply (and only get saved) for that type
+        icon: form.type === 'dynamic' ? form.icon : null,
+        custom_label: form.type === 'dynamic' ? form.custom_label.trim() || null : null,
+        group_id: form.group_id || null,
       });
     } finally {
       setSaving(false);
@@ -214,6 +222,60 @@ const StopForm = ({ item, pendingPin, isFirstStop, onSubmit, onCancel }) => {
               </div>
             )}
           </div>
+
+          {form.type === 'dynamic' && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1">
+                  What do you call this kind of stop? *
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="e.g. Cruise, Music Festival, Ski Trip"
+                  value={form.custom_label}
+                  onChange={set('custom_label')}
+                  required={form.type === 'dynamic'}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1">
+                  Map icon
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {DYNAMIC_EVENT_ICONS.map((icon) => (
+                    <button
+                      key={icon}
+                      type="button"
+                      className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg transition-colors ${
+                        form.icon === icon
+                          ? 'bg-amber-500 ring-2 ring-offset-1 ring-amber-400'
+                          : 'bg-white hover:bg-amber-100 border border-neutral-200'
+                      }`}
+                      onClick={() => setForm({ ...form, icon })}
+                      title={icon}
+                    >
+                      {icon}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {groups.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-1">
+                Part of a group's own itinerary?
+              </label>
+              <select className="input" value={form.group_id} onChange={set('group_id')}>
+                <option value="">Shared trip (everyone)</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-neutral-700 mb-1">
