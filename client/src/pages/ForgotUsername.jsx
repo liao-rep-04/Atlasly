@@ -1,29 +1,28 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Mail, ArrowLeft } from 'lucide-react';
-import { forgotPassword } from '../lib/api';
+import { Link } from 'react-router-dom';
+import { Mail, ArrowLeft, UserCircle } from 'lucide-react';
+import { forgotUsername } from '../lib/api';
 
-const ForgotPassword = () => {
-  const [username, setUsername] = useState('');
+const ForgotUsername = () => {
+  const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [revealedUsername, setRevealedUsername] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      const res = await forgotPassword(username);
-      if (res.data.resetToken) {
+      const res = await forgotUsername(email);
+      if (res.data.username) {
         // Email delivery isn't configured yet (pre-launch) — the server
-        // hands the token straight back instead of emailing it
-        navigate(`/reset-password?token=${res.data.resetToken}`);
-        return;
+        // hands the username straight back instead of emailing it
+        setRevealedUsername(res.data.username);
       }
-      // Normal path: the server always responds identically whether or
-      // not the username matched an account — that's deliberate, not a bug
+      // Either way (revealed directly, or the generic "check your email"
+      // message in secure mode), the confirmation view covers it
       setSubmitted(true);
     } catch (err) {
       setError(err.response?.data?.error || 'Something went wrong. Please try again.');
@@ -45,13 +44,29 @@ const ForgotPassword = () => {
           {submitted ? (
             <div className="text-center py-4">
               <div className="w-14 h-14 rounded-full bg-primary-100 flex items-center justify-center mx-auto mb-4">
-                <Mail className="w-7 h-7 text-primary-600" />
+                {revealedUsername ? (
+                  <UserCircle className="w-7 h-7 text-primary-600" />
+                ) : (
+                  <Mail className="w-7 h-7 text-primary-600" />
+                )}
               </div>
-              <h2 className="text-xl font-semibold mb-2">Check your email</h2>
-              <p className="text-neutral-600 text-sm mb-6">
-                If that username exists, we've sent a link to reset your
-                password to the email on file. It's valid for 1 hour.
-              </p>
+              {revealedUsername ? (
+                <>
+                  <h2 className="text-xl font-semibold mb-2">Found it!</h2>
+                  <p className="text-neutral-600 text-sm mb-1">Your username is:</p>
+                  <p className="text-2xl font-display font-bold text-primary-600 mb-6">
+                    {revealedUsername}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-xl font-semibold mb-2">Check your email</h2>
+                  <p className="text-neutral-600 text-sm mb-6">
+                    If an account exists for <strong>{email}</strong>, we've
+                    sent your username there.
+                  </p>
+                </>
+              )}
               <Link to="/login" className="btn-primary w-full">
                 Back to Sign In
               </Link>
@@ -59,10 +74,10 @@ const ForgotPassword = () => {
           ) : (
             <>
               <h2 className="text-2xl font-semibold text-center mb-2">
-                Forgot your password?
+                Forgot your username?
               </h2>
               <p className="text-neutral-600 text-sm text-center mb-6">
-                Enter your username and we'll help you reset your password.
+                Enter the email on your account and we'll help you find it.
               </p>
 
               {error && (
@@ -73,18 +88,18 @@ const ForgotPassword = () => {
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label htmlFor="username" className="label">
-                    Username
+                  <label htmlFor="email" className="label">
+                    Email
                   </label>
                   <input
-                    id="username"
-                    name="username"
-                    type="text"
-                    autoComplete="username"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    id="email"
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                     className="input"
-                    placeholder="Your username"
+                    placeholder="you@example.com"
                     required
                     autoFocus
                   />
@@ -95,8 +110,8 @@ const ForgotPassword = () => {
               </form>
 
               <div className="mt-4 text-center text-sm">
-                <Link to="/forgot-username" className="text-primary-600 hover:text-primary-700 font-medium">
-                  Forgot your username instead?
+                <Link to="/forgot-password" className="text-primary-600 hover:text-primary-700 font-medium">
+                  Forgot your password instead?
                 </Link>
               </div>
 
@@ -115,4 +130,4 @@ const ForgotPassword = () => {
   );
 };
 
-export default ForgotPassword;
+export default ForgotUsername;

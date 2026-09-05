@@ -41,8 +41,8 @@ api.interceptors.response.use(
 // Auth endpoints
 export const login = (username, password, remember) =>
   api.post('/auth/login', { username, password, remember });
-export const forgotPassword = (email, username) =>
-  api.post('/auth/forgot', { email, username });
+export const forgotUsername = (email) => api.post('/auth/forgot-username', { email });
+export const forgotPassword = (username) => api.post('/auth/forgot-password', { username });
 export const validateResetToken = (token) =>
   api.get('/auth/reset/validate', { params: { token } });
 export const resetPassword = (token, password) =>

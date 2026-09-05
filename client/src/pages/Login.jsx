@@ -93,21 +93,29 @@ const Login = () => {
               />
             </div>
 
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={remember}
-                  onChange={(e) => setRemember(e.target.checked)}
-                  className="rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
-                />
-                Remember me
-              </label>
+            <label className="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                className="rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+              />
+              Remember me
+            </label>
+
+            <div className="flex items-center justify-center gap-3 text-sm">
+              <Link
+                to="/forgot-username"
+                className="text-primary-600 hover:text-primary-700 font-medium"
+              >
+                Forgot username?
+              </Link>
+              <span className="text-neutral-300">|</span>
               <Link
                 to="/forgot-password"
-                className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+                className="text-primary-600 hover:text-primary-700 font-medium"
               >
-                Forgot username or password?
+                Forgot password?
               </Link>
             </div>
 

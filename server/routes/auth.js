@@ -226,46 +226,94 @@ const issueResetToken = async (userId) => {
 };
 
 /**
- * POST /api/auth/forgot
- * Body: { email, username }.
+ * POST /api/auth/forgot-username
+ * Body: { email }. Identifies the account by email alone (email is the
+ * unique, private identifier here — username recovery never needs proof
+ * of anything else).
  *
- * With email delivery configured (RESEND_API_KEY set): the standard secure
- * flow — look up by email alone, and always respond with the same generic
- * message regardless of whether it matched, so the endpoint can't be used
- * to enumerate registered emails. The token only ever goes out via email.
- *
- * Without it configured (current default — pre-launch): there's no
- * out-of-band channel to deliver a token through, so this falls back to
- * verifying username+email together and handing the reset token straight
- * back in the response, skipping the email step entirely. This is
- * intentionally weaker (no proof of email ownership) and is meant to be
- * temporary — set RESEND_API_KEY before a public launch and this branch
- * stops running on its own.
+ * With email delivery configured: emails the username, generic response
+ * either way (can't be used to enumerate registered emails).
+ * Without it configured (pre-launch default): reveals the username
+ * directly in the response — there's no out-of-band channel to send it
+ * through yet. Set RESEND_API_KEY before a public launch to require the
+ * email round-trip instead.
  */
-router.post('/forgot', async (req, res) => {
+router.post('/forgot-username', async (req, res) => {
   const genericResponse = {
-    message: "If an account exists for that email, we've sent instructions.",
+    message: "If an account exists for that email, we've sent your username.",
   };
   try {
-    const { email, username } = req.body;
+    const { email } = req.body;
     if (!email || !isValidEmail(email)) {
-      return res.json(genericResponse);
+      return mailerConfigured()
+        ? res.json(genericResponse)
+        : res.status(400).json({ error: 'A valid email is required' });
     }
 
-    if (!mailerConfigured()) {
-      if (!username || !username.trim()) {
-        return res.status(400).json({
-          error: 'Username and email are required (email delivery is not configured yet)',
-        });
-      }
-      const result = await query(
-        'SELECT id FROM users WHERE email = $1 AND username = $2',
-        [email.trim(), username.trim()]
-      );
-      if (result.rows.length === 0) {
-        return res.status(404).json({ error: 'No account found with that username and email' });
-      }
+    const result = await query('SELECT id, username FROM users WHERE email = $1', [
+      email.trim(),
+    ]);
 
+    if (!mailerConfigured()) {
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'No account found with that email' });
+      }
+      console.log(
+        `[Auth Route] ⚠️ Username revealed without email verification ` +
+          `(RESEND_API_KEY not set) for user: ${result.rows[0].id}`
+      );
+      return res.json({ username: result.rows[0].username });
+    }
+
+    if (result.rows.length === 0) {
+      console.log('[Auth Route] ⊘ Forgot-username request for unknown email (silent)');
+      return res.json(genericResponse);
+    }
+    const user = result.rows[0];
+    await sendMail({
+      to: email.trim(),
+      subject: 'Your Atlasly username',
+      text: `Your Atlasly username is: ${user.username}`,
+      html: `<p>Your Atlasly username is: <strong>${user.username}</strong></p>`,
+    });
+    console.log(`[Auth Route] ✓ Username emailed for user: ${user.id}`);
+    res.json(genericResponse);
+  } catch (error) {
+    console.error('[Auth Route] ❌ Forgot-username error:', error);
+    res.json(genericResponse);
+  }
+});
+
+/**
+ * POST /api/auth/forgot-password
+ * Body: { username }. Identifies the account by username alone.
+ *
+ * With email delivery configured: sends the reset link to the email
+ * already on file for that username (never asked for — we already know
+ * it), generic response either way. Without it configured (pre-launch
+ * default): hands the reset token straight back in the response, skipping
+ * email entirely — no proof of anything beyond knowing the username. This
+ * is intentionally the weaker, temporary posture; set RESEND_API_KEY
+ * before a public launch and this branch stops running on its own.
+ */
+router.post('/forgot-password', async (req, res) => {
+  const genericResponse = {
+    message: "If that username exists, we've sent password reset instructions to the email on file.",
+  };
+  try {
+    const { username } = req.body;
+    if (!username || !username.trim()) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+
+    const result = await query('SELECT id, email FROM users WHERE username = $1', [
+      username.trim(),
+    ]);
+
+    if (!mailerConfigured()) {
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'No account found with that username' });
+      }
       const rawToken = await issueResetToken(result.rows[0].id);
       console.log(
         `[Auth Route] ⚠️ Password reset issued without email verification ` +
@@ -274,11 +322,8 @@ router.post('/forgot', async (req, res) => {
       return res.json({ resetToken: rawToken });
     }
 
-    const result = await query('SELECT id, username FROM users WHERE email = $1', [
-      email.trim(),
-    ]);
     if (result.rows.length === 0) {
-      console.log('[Auth Route] ⊘ Forgot-password request for unknown email (silent)');
+      console.log('[Auth Route] ⊘ Forgot-password request for unknown username (silent)');
       return res.json(genericResponse);
     }
     const user = result.rows[0];
@@ -287,14 +332,12 @@ router.post('/forgot', async (req, res) => {
     const appUrl = process.env.APP_URL || 'http://localhost:5173';
     const resetLink = `${appUrl}/reset-password?token=${rawToken}`;
     await sendMail({
-      to: email.trim(),
+      to: user.email,
       subject: 'Reset your Atlasly password',
       text:
-        `Your Atlasly username is: ${user.username}\n\n` +
         `To reset your password, visit this link (valid for 1 hour):\n${resetLink}\n\n` +
         `If you didn't request this, you can safely ignore this email.`,
       html:
-        `<p>Your Atlasly username is: <strong>${user.username}</strong></p>` +
         `<p><a href="${resetLink}">Click here to reset your password</a> (valid for 1 hour).</p>` +
         `<p>If you didn't request this, you can safely ignore this email.</p>`,
     });
