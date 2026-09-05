@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import DemoMap from '../components/DemoMap';
+import ShareButton from '../components/ShareButton';
 import {
   MapPin,
   Camera,
@@ -69,7 +70,12 @@ const Landing = () => {
                 Atlasly
               </span>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
+              <ShareButton
+                className="btn-ghost"
+                iconOnly
+                text="Check out Atlasly — plan your next trip with maps, photos, and more!"
+              />
               <Link to="/login" className="btn-ghost">
                 Sign In
               </Link>

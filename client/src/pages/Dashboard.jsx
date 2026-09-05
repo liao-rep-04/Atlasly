@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Plus, MapPin, Calendar, Camera, Trash2, X, Users, Mail, Pencil, Images } from 'lucide-react';
 import { getTrips, createTrip, deleteTrip, getInvitations, respondToInvitation } from '../lib/api';
 import CompleteProfileModal from '../components/CompleteProfileModal';
+import ShareButton from '../components/ShareButton';
 
 const emptyForm = { name: '', description: '', start_date: '', end_date: '' };
 
@@ -249,6 +250,10 @@ const Dashboard = () => {
               </p>
             </div>
             <div className="flex items-center gap-2">
+              <ShareButton
+                className="btn-outline"
+                text="Check out Atlasly — plan your next trip with maps, photos, and more!"
+              />
               <Link to="/gallery" className="btn-outline">
                 <Images className="w-4 h-4 mr-2" />
                 Memories

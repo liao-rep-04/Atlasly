@@ -17,6 +17,7 @@ import StopCard from '../components/StopCard';
 import SortableStopCard from '../components/SortableStopCard';
 import IdeaBoard from '../components/IdeaBoard';
 import GroupManager from '../components/GroupManager';
+import ShareButton from '../components/ShareButton';
 import TripPlayback from '../components/TripPlayback';
 import TripSlideshow from '../components/TripSlideshow';
 import { optimizeItinerary, totalRouteDistance } from '../lib/routeOptimizer';
@@ -467,6 +468,12 @@ const TripDetail = () => {
                 <Users2 className="w-4 h-4 mr-2" />
                 Groups
               </button>
+              <ShareButton
+                className="btn-outline"
+                title={trip.name}
+                text={`Join me on Atlasly! I'm planning "${trip.name}" — sign up and I'll add you to the trip:`}
+                url={`${window.location.origin}/register`}
+              />
               <button
                 className="btn-outline"
                 onClick={() => setPlaying(true)}
