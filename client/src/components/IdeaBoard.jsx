@@ -88,7 +88,7 @@ const IdeaBoard = ({ tripId, currentUserId, isOwner, onPromoted }) => {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
         <h2 className="text-xl font-semibold flex items-center gap-2">
           <Lightbulb className="w-5 h-5 text-amber-500" />
           Idea Board

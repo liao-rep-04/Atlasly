@@ -64,23 +64,24 @@ const Landing = () => {
       <nav className="fixed top-0 w-full bg-white/80 backdrop-blur-lg border-b border-neutral-200 z-50">
         <div className="container-page">
           <div className="flex items-center justify-between py-4">
-            <div className="flex items-center gap-2">
-              <Compass className="w-8 h-8 text-primary-600" />
-              <span className="text-2xl font-display font-bold bg-gradient-to-r from-primary-600 to-secondary-600 bg-clip-text text-transparent">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <Compass className="w-6 h-6 sm:w-8 sm:h-8 text-primary-600" />
+              <span className="text-lg sm:text-2xl font-display font-bold bg-gradient-to-r from-primary-600 to-secondary-600 bg-clip-text text-transparent">
                 Atlasly
               </span>
             </div>
-            <div className="flex items-center gap-2 sm:gap-4">
+            <div className="flex items-center gap-0.5 sm:gap-4">
               <ShareButton
-                className="btn-ghost"
+                className="btn-ghost px-2 sm:px-4"
                 iconOnly
                 text="Check out Atlasly — plan your next trip with maps, photos, and more!"
               />
-              <Link to="/login" className="btn-ghost">
+              <Link to="/login" className="btn-ghost px-2 sm:px-4 text-sm sm:text-base">
                 Sign In
               </Link>
-              <Link to="/register" className="btn-primary">
-                Get Started Free
+              <Link to="/register" className="btn-primary px-2.5 sm:px-4 text-sm sm:text-base whitespace-nowrap">
+                <span className="hidden sm:inline">Get Started Free</span>
+                <span className="sm:hidden">Get Started</span>
               </Link>
             </div>
           </div>

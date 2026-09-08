@@ -240,7 +240,7 @@ const Dashboard = () => {
       {/* Main Content */}
       <main className="container-page">
         <div className="py-8">
-          <div className="mb-8 flex items-end justify-between">
+          <div className="mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
             <div>
               <h2 className="text-3xl font-display font-bold text-neutral-900 mb-2">
                 My Trips
@@ -249,7 +249,7 @@ const Dashboard = () => {
                 Start planning your next adventure
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <ShareButton
                 className="btn-outline"
                 text="Check out Atlasly — plan your next trip with maps, photos, and more!"
@@ -279,10 +279,10 @@ const Dashboard = () => {
               {invitations.map((inv) => (
                 <div
                   key={inv.id}
-                  className="card border-2 border-primary-200 bg-primary-50/50 flex items-center justify-between gap-4"
+                  className="card border-2 border-primary-200 bg-primary-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <Mail className="w-5 h-5 text-primary-500 flex-shrink-0" />
+                  <div className="flex items-start gap-3 min-w-0">
+                    <Mail className="w-5 h-5 text-primary-500 flex-shrink-0 mt-0.5" />
                     <div className="min-w-0">
                       <p className="text-sm text-neutral-900">
                         <span className="font-semibold">{inv.invited_by_username}</span>{' '}
@@ -297,13 +297,13 @@ const Dashboard = () => {
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
                     <button
-                      className="btn-primary px-4 py-1.5 text-sm"
+                      className="btn-primary px-4 py-1.5 text-sm flex-1 sm:flex-none"
                       onClick={() => handleInviteResponse(inv.id, true)}
                     >
                       Join Trip
                     </button>
                     <button
-                      className="btn-outline px-4 py-1.5 text-sm"
+                      className="btn-outline px-4 py-1.5 text-sm flex-1 sm:flex-none"
                       onClick={() => handleInviteResponse(inv.id, false)}
                     >
                       Decline
@@ -425,7 +425,7 @@ const Dashboard = () => {
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-neutral-700 mb-1">
                     Start Date

@@ -355,16 +355,16 @@ const TripDetail = () => {
               <span className="hidden sm:inline">Back to Dashboard</span>
               <span className="sm:hidden">Back</span>
             </Link>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-0.5 sm:gap-2">
               <Link
                 to={`/trip/${id}/gallery`}
-                className="btn-ghost px-4 py-2"
+                className="btn-ghost px-2 sm:px-4 py-2"
                 title="Trip photo gallery"
               >
                 <Images className="w-4 h-4" />
               </Link>
               <button
-                className={`btn-ghost px-4 py-2 ${
+                className={`btn-ghost px-2 sm:px-4 py-2 ${
                   viewMode === 'list' ? 'bg-primary-100 text-primary-700' : ''
                 }`}
                 onClick={() => setViewMode('list')}
@@ -372,16 +372,16 @@ const TripDetail = () => {
                 <List className="w-4 h-4" />
               </button>
               <button
-                className={`btn-ghost px-4 py-2 ${
+                className={`btn-ghost px-2 sm:px-4 py-2 ${
                   viewMode === 'split' ? 'bg-primary-100 text-primary-700' : ''
                 }`}
                 onClick={() => setViewMode('split')}
               >
-                <List className="w-4 h-4 mr-1" />
-                <MapIcon className="w-4 h-4" />
+                <List className="w-3.5 h-3.5 sm:w-4 sm:h-4 sm:mr-1" />
+                <MapIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
               <button
-                className={`btn-ghost px-4 py-2 ${
+                className={`btn-ghost px-2 sm:px-4 py-2 ${
                   viewMode === 'map' ? 'bg-primary-100 text-primary-700' : ''
                 }`}
                 onClick={() => setViewMode('map')}
@@ -389,7 +389,7 @@ const TripDetail = () => {
                 <MapIcon className="w-4 h-4" />
               </button>
               <button
-                className={`btn-ghost px-4 py-2 ${
+                className={`btn-ghost px-2 sm:px-4 py-2 ${
                   viewMode === 'ideas' ? 'bg-amber-100 text-amber-700' : ''
                 }`}
                 onClick={() => setViewMode('ideas')}
