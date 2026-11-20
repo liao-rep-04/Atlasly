@@ -32,6 +32,10 @@ export const ACTIVITY_STATUSES = [
   { value: 'optional', label: 'Optional' },
 ];
 
+// A geotagged photo closer than this to its stop is just GPS noise / the
+// same spot — further than this, it's worth suggesting a micro tag.
+export const MICRO_TAG_SUGGEST_THRESHOLD_KM = 0.15;
+
 // Palette for trip sub-groups (breakout itineraries within one trip)
 export const GROUP_COLORS = [
   '#8b5cf6', // violet

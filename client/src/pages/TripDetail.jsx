@@ -23,9 +23,10 @@ import TripSlideshow from '../components/TripSlideshow';
 import { optimizeItinerary, totalRouteDistance } from '../lib/routeOptimizer';
 import {
   getTrip, createTripItem, updateTripItem, deleteTripItem,
-  reorderTripItems, uploadPhoto, deletePhoto, inviteToTrip,
+  reorderTripItems, uploadPhotos, deletePhoto, inviteToTrip,
   createActivity, updateActivity, deleteActivity,
   createGroup, updateGroup, deleteGroup,
+  createPoi, deletePoi,
 } from '../lib/api';
 
 const TripDetail = () => {
@@ -181,16 +182,18 @@ const TripDetail = () => {
     setViewMode('split');
   };
 
-  const handleUploadPhoto = async (itemId, file) => {
+  const handleUploadPhotos = async (itemId, files) => {
     try {
-      const res = await uploadPhoto(itemId, file);
+      const res = await uploadPhotos(itemId, files);
       setTripItems((items) =>
         items.map((it) =>
-          it.id === itemId ? { ...it, photos: [...(it.photos || []), res.data.photo] } : it
+          it.id === itemId ? { ...it, photos: [...(it.photos || []), ...res.data.photos] } : it
         )
       );
+      return res.data.photos;
     } catch (err) {
       alert(err.response?.data?.error || 'Photo upload failed');
+      return [];
     }
   };
 
@@ -241,6 +244,25 @@ const TripDetail = () => {
         it.id === itemId
           ? { ...it, activities: it.activities.filter((a) => a.id !== activity.id) }
           : it
+      )
+    );
+  };
+
+  // Micro tags — named sub-locations nested inside a stop
+  const handleCreatePoi = async (itemId, data) => {
+    const res = await createPoi(id, itemId, data);
+    setTripItems((items) =>
+      items.map((it) =>
+        it.id === itemId ? { ...it, pois: [...(it.pois || []), res.data.poi] } : it
+      )
+    );
+  };
+
+  const handleDeletePoi = async (itemId, poiId) => {
+    await deletePoi(id, itemId, poiId);
+    setTripItems((items) =>
+      items.map((it) =>
+        it.id === itemId ? { ...it, pois: it.pois.filter((p) => p.id !== poiId) } : it
       )
     );
   };
@@ -631,11 +653,13 @@ const TripDetail = () => {
                         }}
                         onDelete={handleDeleteItem}
                         onMove={() => {}}
-                        onUploadPhoto={handleUploadPhoto}
+                        onUploadPhotos={handleUploadPhotos}
                         onDeletePhoto={handleDeletePhoto}
                         onCreateActivity={handleCreateActivity}
                         onToggleActivityStatus={handleToggleActivityStatus}
                         onDeleteActivity={handleDeleteActivity}
+                        onCreatePoi={handleCreatePoi}
+                        onDeletePoi={handleDeletePoi}
                       />
                     ))
                   ) : (
@@ -664,11 +688,13 @@ const TripDetail = () => {
                             }}
                             onDelete={handleDeleteItem}
                             onMove={handleMove}
-                            onUploadPhoto={handleUploadPhoto}
+                            onUploadPhotos={handleUploadPhotos}
                             onDeletePhoto={handleDeletePhoto}
                             onCreateActivity={handleCreateActivity}
                             onToggleActivityStatus={handleToggleActivityStatus}
                             onDeleteActivity={handleDeleteActivity}
+                            onCreatePoi={handleCreatePoi}
+                            onDeletePoi={handleDeletePoi}
                           />
                         ))}
                       </SortableContext>

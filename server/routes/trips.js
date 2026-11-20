@@ -270,10 +270,23 @@ router.get('/:id', async (req, res) => {
       (activitiesByItem[activity.trip_item_id] ||= []).push(activity);
     }
 
+    const pois = await query(
+      `SELECT p.* FROM trip_item_pois p
+       JOIN trip_items ti ON ti.id = p.trip_item_id
+       WHERE ti.trip_id = $1
+       ORDER BY p.created_at`,
+      [trip.id]
+    );
+    const poisByItem = {};
+    for (const poi of pois.rows) {
+      (poisByItem[poi.trip_item_id] ||= []).push(poi);
+    }
+
     const itemsWithExtras = items.rows.map((item) => ({
       ...item,
       photos: photosByItem[item.id] || [],
       activities: activitiesByItem[item.id] || [],
+      pois: poisByItem[item.id] || [],
     }));
 
     res.json({
@@ -390,7 +403,7 @@ router.post('/:id/items', async (req, res) => {
       ]
     );
     console.log(`[Trips Route] ✓ Item created: ${id}`);
-    res.status(201).json({ item: { ...result.rows[0], photos: [], activities: [] } });
+    res.status(201).json({ item: { ...result.rows[0], photos: [], activities: [], pois: [] } });
   } catch (error) {
     console.error('[Trips Route] ❌ Item create error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -576,7 +589,7 @@ router.post('/:id/ideas/:ideaId/promote', async (req, res) => {
 
     await query('DELETE FROM trip_ideas WHERE id = $1', [i.id]);
     console.log(`[Trips Route] ✓ Idea promoted to item: ${i.id} -> ${itemId}`);
-    res.status(201).json({ item: { ...result.rows[0], photos: [], activities: [] } });
+    res.status(201).json({ item: { ...result.rows[0], photos: [], activities: [], pois: [] } });
   } catch (error) {
     console.error('[Trips Route] ❌ Idea promote error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -759,6 +772,78 @@ router.delete('/:id/items/:itemId/activities/:activityId', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('[Trips Route] ❌ Activity delete error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/trips/:id/items/:itemId/pois
+ * Add a micro tag — a named sub-location within a stop (e.g. "that rooftop
+ * cafe" within a "Paris" stop). Coordinates default to the stop's own
+ * position when omitted, so a quick name-only tag is still valid.
+ * Optionally links back a photo (whose EXIF GPS prompted the tag).
+ */
+router.post('/:id/items/:itemId/pois', async (req, res) => {
+  try {
+    const trip = await loadAccessibleTrip(req.params.id, req.user.id, res);
+    if (!trip) return;
+    const itemId = await loadItemOnTrip(trip.id, req.params.itemId, res);
+    if (!itemId) return;
+
+    const { name, latitude, longitude, photo_id } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Micro tag name is required' });
+    }
+
+    let lat = latitude;
+    let lng = longitude;
+    if (lat == null || lng == null) {
+      const item = await query('SELECT latitude, longitude FROM trip_items WHERE id = $1', [itemId]);
+      lat = lat ?? item.rows[0]?.latitude ?? null;
+      lng = lng ?? item.rows[0]?.longitude ?? null;
+    }
+
+    const id = randomUUID();
+    const result = await query(
+      `INSERT INTO trip_item_pois (id, trip_item_id, name, latitude, longitude)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [id, itemId, name.trim(), lat, lng]
+    );
+
+    if (photo_id) {
+      await query('UPDATE photos SET poi_id = $1 WHERE id = $2 AND trip_item_id = $3', [
+        id, photo_id, itemId,
+      ]);
+    }
+
+    console.log(`[Trips Route] ✓ Micro tag created: ${id}`);
+    res.status(201).json({ poi: result.rows[0] });
+  } catch (error) {
+    console.error('[Trips Route] ❌ Micro tag create error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * DELETE /api/trips/:id/items/:itemId/pois/:poiId
+ */
+router.delete('/:id/items/:itemId/pois/:poiId', async (req, res) => {
+  try {
+    const trip = await loadAccessibleTrip(req.params.id, req.user.id, res);
+    if (!trip) return;
+    const itemId = await loadItemOnTrip(trip.id, req.params.itemId, res);
+    if (!itemId) return;
+
+    const result = await query(
+      'DELETE FROM trip_item_pois WHERE id = $1 AND trip_item_id = $2 RETURNING id',
+      [req.params.poiId, itemId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Micro tag not found' });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Trips Route] ❌ Micro tag delete error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

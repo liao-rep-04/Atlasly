@@ -100,6 +100,12 @@ export const updateActivity = (tripId, itemId, activityId, data) =>
 export const deleteActivity = (tripId, itemId, activityId) =>
   api.delete(`/trips/${tripId}/items/${itemId}/activities/${activityId}`);
 
+// Micro tag endpoints (a named sub-location nested inside a stop)
+export const createPoi = (tripId, itemId, data) =>
+  api.post(`/trips/${tripId}/items/${itemId}/pois`, data);
+export const deletePoi = (tripId, itemId, poiId) =>
+  api.delete(`/trips/${tripId}/items/${itemId}/pois/${poiId}`);
+
 // Trip group (sub-itinerary) endpoints
 export const createGroup = (tripId, data) => api.post(`/trips/${tripId}/groups`, data);
 export const updateGroup = (tripId, groupId, data) =>
@@ -113,9 +119,9 @@ export const promoteIdea = (tripId, ideaId) => api.post(`/trips/${tripId}/ideas/
 export const deleteIdea = (tripId, ideaId) => api.delete(`/trips/${tripId}/ideas/${ideaId}`);
 
 // Photo endpoints
-export const uploadPhoto = (tripItemId, file, caption) => {
+export const uploadPhotos = (tripItemId, files, caption) => {
   const formData = new FormData();
-  formData.append('photo', file);
+  for (const file of files) formData.append('photos', file);
   if (caption) formData.append('caption', caption);
   return api.post(`/photos/${tripItemId}`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },

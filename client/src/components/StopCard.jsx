@@ -1,9 +1,14 @@
 import { useRef, useState } from 'react';
 import {
-  Edit, Trash2, ChevronUp, ChevronDown, Camera, X, Loader2, Sparkles, GripVertical,
+  Edit, Trash2, ChevronUp, ChevronDown, Camera, X, Loader2, Sparkles, GripVertical, MapPinned,
 } from 'lucide-react';
-import { stopIcon, stopLabel, transportEmoji, TRANSPORT_MODES } from '../lib/tripConstants';
+import {
+  stopIcon, stopLabel, transportEmoji, TRANSPORT_MODES, MICRO_TAG_SUGGEST_THRESHOLD_KM,
+} from '../lib/tripConstants';
+import { haversineKm } from '../lib/routeOptimizer';
 import StopActivities from './StopActivities';
+import StopMicroTags from './StopMicroTags';
+import StopMiniMap from './StopMiniMap';
 
 /**
  * One stop in the itinerary list: details, photo strip with upload,
@@ -16,25 +21,75 @@ import StopActivities from './StopActivities';
  */
 const StopCard = ({
   item, index, isFirst, isLast, group,
-  onEdit, onDelete, onMove, onUploadPhoto, onDeletePhoto, onHover, dragHandleProps,
+  onEdit, onDelete, onMove, onUploadPhotos, onDeletePhoto, onHover, dragHandleProps,
   onCreateActivity, onToggleActivityStatus, onDeleteActivity,
+  onCreatePoi, onDeletePoi,
 }) => {
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  // Photos whose EXIF GPS landed meaningfully away from this stop — a
+  // one-time nudge to turn them into a micro tag, not a standing notice.
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggestionNames, setSuggestionNames] = useState({});
 
-  const handleFiles = async (e) => {
-    const files = Array.from(e.target.files || []);
+  const uploadFiles = async (files) => {
     if (files.length === 0) return;
     setUploading(true);
     try {
-      for (const file of files) {
-        await onUploadPhoto(item.id, file);
+      const uploaded = await onUploadPhotos(item.id, files);
+      if (item.latitude && item.longitude) {
+        const stopPoint = { latitude: parseFloat(item.latitude), longitude: parseFloat(item.longitude) };
+        const newSuggestions = (uploaded || []).filter((photo) => {
+          if (!photo.latitude || !photo.longitude) return false;
+          const distanceKm = haversineKm(stopPoint, {
+            latitude: parseFloat(photo.latitude),
+            longitude: parseFloat(photo.longitude),
+          });
+          return distanceKm > MICRO_TAG_SUGGEST_THRESHOLD_KM;
+        }).map((photo) => ({ ...photo, distanceKm: haversineKm(stopPoint, {
+          latitude: parseFloat(photo.latitude), longitude: parseFloat(photo.longitude),
+        }) }));
+        if (newSuggestions.length > 0) {
+          setSuggestions((prev) => [...prev, ...newSuggestions]);
+        }
       }
     } finally {
       setUploading(false);
-      e.target.value = '';
     }
   };
+
+  const handleFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    await uploadFiles(files);
+    e.target.value = '';
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const files = Array.from(e.dataTransfer.files || []).filter((f) => f.type.startsWith('image/'));
+    await uploadFiles(files);
+  };
+
+  const formatDistance = (km) => (km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`);
+
+  const dismissSuggestion = (photoId) => {
+    setSuggestions((prev) => prev.filter((p) => p.id !== photoId));
+  };
+
+  const acceptSuggestion = async (photo) => {
+    const name = (suggestionNames[photo.id] || '').trim();
+    if (!name) return;
+    await onCreatePoi(item.id, {
+      name, latitude: photo.latitude, longitude: photo.longitude, photo_id: photo.id,
+    });
+    dismissSuggestion(photo.id);
+  };
+
+  const untaggedGeoPhotos = (item.photos || []).filter(
+    (p) => p.latitude && p.longitude && !p.poi_id
+  );
 
   const transportLabel = TRANSPORT_MODES.find((m) => m.value === item.transport_mode)?.label;
   const isDynamic = item.type === 'dynamic';
@@ -161,8 +216,15 @@ const StopCard = ({
               )}
             </div>
 
-            {/* Photo strip */}
-            <div className="flex items-center gap-2 flex-wrap">
+            {/* Photo strip — click or drag-and-drop to upload, any number at once */}
+            <div
+              className={`flex items-center gap-2 flex-wrap rounded-lg transition-colors ${
+                dragOver ? 'bg-primary-50 ring-2 ring-primary-300' : ''
+              }`}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+            >
               {(item.photos || []).map((photo) => (
                 <div key={photo.id} className="relative group/photo">
                   <img
@@ -183,7 +245,7 @@ const StopCard = ({
                 className="w-16 h-16 rounded-lg border-2 border-dashed border-neutral-300 hover:border-primary-400 hover:bg-primary-50 flex flex-col items-center justify-center text-neutral-400 hover:text-primary-500 transition-colors"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                title="Add photos"
+                title="Add photos (or drag and drop)"
               >
                 {uploading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -200,6 +262,51 @@ const StopCard = ({
                 onChange={handleFiles}
               />
             </div>
+
+            {/* A photo's EXIF GPS landed away from this stop — offer to tag that spot */}
+            {suggestions.map((photo) => (
+              <div
+                key={photo.id}
+                className="mt-2 flex items-center gap-2 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2"
+              >
+                <MapPinned className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                <span className="text-amber-800 flex-shrink-0">
+                  Taken ~{formatDistance(photo.distanceKm)} from here —
+                </span>
+                <input
+                  type="text"
+                  className="input text-sm py-1 flex-1 min-w-0"
+                  placeholder="Name this spot"
+                  value={suggestionNames[photo.id] || ''}
+                  onChange={(e) =>
+                    setSuggestionNames((prev) => ({ ...prev, [photo.id]: e.target.value }))
+                  }
+                />
+                <button
+                  type="button"
+                  className="btn-primary text-sm py-1 px-2.5 flex-shrink-0"
+                  onClick={() => acceptSuggestion(photo)}
+                  disabled={!suggestionNames[photo.id]?.trim()}
+                >
+                  Tag it
+                </button>
+                <button
+                  type="button"
+                  className="p-1 text-amber-400 hover:text-amber-700 flex-shrink-0"
+                  onClick={() => dismissSuggestion(photo.id)}
+                  title="Dismiss"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+
+            <StopMicroTags
+              pois={item.pois || []}
+              onCreate={(data) => onCreatePoi(item.id, data)}
+              onDelete={(poi) => onDeletePoi(item.id, poi.id)}
+            />
+            <StopMiniMap item={item} pois={item.pois || []} untaggedPhotos={untaggedGeoPhotos} />
 
             {/* Dynamic events get their own nested agenda of sub-activities */}
             {isDynamic && (

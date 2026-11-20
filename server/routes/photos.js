@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { query } from '../db.js';
 import { authenticate } from '../middleware/auth.js';
 import { imageUpload as upload, removeUpload } from '../utils/imageUpload.js';
+import { readPhotoMetadata } from '../utils/exif.js';
 
 const router = express.Router();
 
@@ -71,10 +72,12 @@ router.get('/', async (req, res) => {
 
 /**
  * POST /api/photos/:tripItemId
- * Upload a photo for a trip item (multipart field: "photo")
+ * Upload one or more photos for a trip item in a single request
+ * (multipart field: "photos", repeated). GPS/capture-time is read from
+ * each file's EXIF automatically, best-effort.
  */
 router.post('/:tripItemId', (req, res) => {
-  upload.single('photo')(req, res, async (err) => {
+  upload.array('photos', 20)(req, res, async (err) => {
     if (err) {
       console.log('[Photos Route] ✗ Upload rejected:', err.message);
       return res.status(400).json({ error: err.message });
@@ -82,26 +85,34 @@ router.post('/:tripItemId', (req, res) => {
     try {
       const item = await loadOwnedItem(req.params.tripItemId, req.user.id, res);
       if (!item) {
-        if (req.file) fs.unlink(req.file.path, () => {});
+        (req.files || []).forEach((f) => fs.unlink(f.path, () => {}));
         return;
       }
-      if (!req.file) {
-        return res.status(400).json({ error: 'No photo file provided' });
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: 'No photo files provided' });
       }
 
-      const id = randomUUID();
-      const url = `/uploads/${req.file.filename}`;
       const orderResult = await query(
         'SELECT COALESCE(MAX(order_index), -1) + 1 AS next FROM photos WHERE trip_item_id = $1',
         [item.id]
       );
-      const result = await query(
-        `INSERT INTO photos (id, trip_item_id, url, caption, order_index)
-         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-        [id, item.id, url, req.body.caption || null, orderResult.rows[0].next]
-      );
-      console.log(`[Photos Route] ✓ Photo uploaded: ${id}`);
-      res.status(201).json({ photo: result.rows[0] });
+      let nextOrder = orderResult.rows[0].next;
+
+      const photos = [];
+      for (const file of req.files) {
+        const id = randomUUID();
+        const url = `/uploads/${file.filename}`;
+        const { latitude, longitude, takenAt } = await readPhotoMetadata(file.path);
+        const result = await query(
+          `INSERT INTO photos (id, trip_item_id, url, caption, order_index, latitude, longitude, taken_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+          [id, item.id, url, req.body.caption || null, nextOrder, latitude, longitude, takenAt]
+        );
+        photos.push(result.rows[0]);
+        nextOrder += 1;
+      }
+      console.log(`[Photos Route] ✓ ${photos.length} photo(s) uploaded for item ${item.id}`);
+      res.status(201).json({ photos });
     } catch (error) {
       console.error('[Photos Route] ❌ Upload error:', error);
       res.status(500).json({ error: 'Internal server error' });

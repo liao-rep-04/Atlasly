@@ -180,6 +180,21 @@ export const initializeDatabase = async () => {
     `);
     console.log('[DB] ✓ Trip item activities table created/verified');
 
+    // Micro tags: a named sub-location nested inside a stop (e.g. "that
+    // rooftop cafe" within a "Paris" stop) — lighter than a full stop, and
+    // never shown on the main trip map, only inside the stop's own card.
+    await query(`
+      CREATE TABLE IF NOT EXISTS trip_item_pois (
+        id VARCHAR(255) PRIMARY KEY,
+        trip_item_id VARCHAR(255) REFERENCES trip_items(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        latitude DECIMAL(10, 7),
+        longitude DECIMAL(10, 7),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('[DB] ✓ Trip item POIs (micro tags) table created/verified');
+
     // Idea board: proposals from any trip member that haven't (yet) been
     // promoted into the itinerary. Kept as its own table rather than a
     // trip_items status flag so promoted ideas can start fresh in the
@@ -216,6 +231,12 @@ export const initializeDatabase = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    // EXIF-derived GPS/capture-time (read automatically on upload) and an
+    // optional link to the micro tag a photo was confirmed to belong to
+    await query(`ALTER TABLE photos ADD COLUMN IF NOT EXISTS latitude DECIMAL(10, 7)`);
+    await query(`ALTER TABLE photos ADD COLUMN IF NOT EXISTS longitude DECIMAL(10, 7)`);
+    await query(`ALTER TABLE photos ADD COLUMN IF NOT EXISTS taken_at TIMESTAMP`);
+    await query(`ALTER TABLE photos ADD COLUMN IF NOT EXISTS poi_id VARCHAR(255) REFERENCES trip_item_pois(id) ON DELETE SET NULL`);
     console.log('[DB] ✓ Photos table created/verified');
 
     // Create indexes for better performance
@@ -227,6 +248,8 @@ export const initializeDatabase = async () => {
     await query('CREATE INDEX IF NOT EXISTS idx_trip_members_trip ON trip_members(trip_id, status)');
     await query('CREATE INDEX IF NOT EXISTS idx_trip_ideas_trip ON trip_ideas(trip_id)');
     await query('CREATE INDEX IF NOT EXISTS idx_trip_item_activities_item ON trip_item_activities(trip_item_id)');
+    await query('CREATE INDEX IF NOT EXISTS idx_trip_item_pois_item ON trip_item_pois(trip_item_id)');
+    await query('CREATE INDEX IF NOT EXISTS idx_photos_poi_id ON photos(poi_id)');
     await query('CREATE INDEX IF NOT EXISTS idx_trip_groups_trip ON trip_groups(trip_id)');
     await query('CREATE INDEX IF NOT EXISTS idx_trip_group_members_group ON trip_group_members(group_id)');
     await query('CREATE INDEX IF NOT EXISTS idx_trip_items_group ON trip_items(group_id)');
