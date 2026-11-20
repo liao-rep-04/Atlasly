@@ -3,7 +3,7 @@ import fs from 'fs';
 import { randomUUID } from 'crypto';
 import { query } from '../db.js';
 import { authenticate } from '../middleware/auth.js';
-import { imageUpload as upload, removeUpload } from '../utils/imageUpload.js';
+import { imageUpload as upload, removeUpload, MAX_FILE_SIZE } from '../utils/imageUpload.js';
 import { readPhotoMetadata } from '../utils/exif.js';
 
 const router = express.Router();
@@ -80,7 +80,10 @@ router.post('/:tripItemId', (req, res) => {
   upload.array('photos', 20)(req, res, async (err) => {
     if (err) {
       console.log('[Photos Route] ✗ Upload rejected:', err.message);
-      return res.status(400).json({ error: err.message });
+      const message = err.code === 'LIMIT_FILE_SIZE'
+        ? `One of those photos is over the ${Math.round(MAX_FILE_SIZE / (1024 * 1024))}MB limit — try a smaller photo or lower quality`
+        : err.message;
+      return res.status(400).json({ error: message });
     }
     try {
       const item = await loadOwnedItem(req.params.tripItemId, req.user.id, res);

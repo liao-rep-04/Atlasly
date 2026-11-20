@@ -33,7 +33,7 @@ services:
       - key: UPLOAD_DIR
         value: /var/data/uploads
       - key: MAX_FILE_SIZE
-        value: '5242880'
+        value: '20971520'
       - key: ANTHROPIC_API_KEY
         sync: false # set manually in the dashboard — never commit the key
       - key: APP_URL
