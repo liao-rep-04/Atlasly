@@ -239,6 +239,35 @@ export const initializeDatabase = async () => {
     await query(`ALTER TABLE photos ADD COLUMN IF NOT EXISTS poi_id VARCHAR(255) REFERENCES trip_item_pois(id) ON DELETE SET NULL`);
     console.log('[DB] ✓ Photos table created/verified');
 
+    // Meetly: a separate, unlinked real-world events/meetups board. Any
+    // logged-in user can post an event (a pin with a title/description,
+    // optionally scheduled) and RSVP to one another's.
+    await query(`
+      CREATE TABLE IF NOT EXISTS meetly_events (
+        id VARCHAR(255) PRIMARY KEY,
+        created_by VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        location_name VARCHAR(255),
+        latitude DECIMAL(10, 7) NOT NULL,
+        longitude DECIMAL(10, 7) NOT NULL,
+        event_date DATE,
+        event_time TIME,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await query(`
+      CREATE TABLE IF NOT EXISTS meetly_rsvps (
+        id VARCHAR(255) PRIMARY KEY,
+        event_id VARCHAR(255) REFERENCES meetly_events(id) ON DELETE CASCADE,
+        user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(event_id, user_id)
+      )
+    `);
+    console.log('[DB] ✓ Meetly tables created/verified');
+
     // Create indexes for better performance
     await query('CREATE INDEX IF NOT EXISTS idx_trips_user_id ON trips(user_id)');
     await query('CREATE INDEX IF NOT EXISTS idx_trip_items_trip_id ON trip_items(trip_id)');
@@ -247,6 +276,9 @@ export const initializeDatabase = async () => {
     await query('CREATE INDEX IF NOT EXISTS idx_trip_members_user ON trip_members(user_id, status)');
     await query('CREATE INDEX IF NOT EXISTS idx_trip_members_trip ON trip_members(trip_id, status)');
     await query('CREATE INDEX IF NOT EXISTS idx_trip_ideas_trip ON trip_ideas(trip_id)');
+    await query('CREATE INDEX IF NOT EXISTS idx_meetly_events_created_by ON meetly_events(created_by)');
+    await query('CREATE INDEX IF NOT EXISTS idx_meetly_rsvps_event ON meetly_rsvps(event_id)');
+    await query('CREATE INDEX IF NOT EXISTS idx_meetly_rsvps_user ON meetly_rsvps(user_id)');
     await query('CREATE INDEX IF NOT EXISTS idx_trip_item_activities_item ON trip_item_activities(trip_item_id)');
     await query('CREATE INDEX IF NOT EXISTS idx_trip_item_pois_item ON trip_item_pois(trip_item_id)');
     await query('CREATE INDEX IF NOT EXISTS idx_photos_poi_id ON photos(poi_id)');

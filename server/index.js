@@ -8,6 +8,7 @@ import authRoutes from './routes/auth.js';
 import tripRoutes from './routes/trips.js';
 import photoRoutes from './routes/photos.js';
 import placeRoutes from './routes/places.js';
+import meetlyRoutes from './routes/meetly.js';
 
 dotenv.config();
 
@@ -39,6 +40,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/trips', tripRoutes);
 app.use('/api/photos', photoRoutes);
 app.use('/api/places', placeRoutes);
+app.use('/api/meetly', meetlyRoutes);
 
 // In production the server also serves the built client (single Render service)
 const clientDist = path.join(

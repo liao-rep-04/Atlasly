@@ -135,6 +135,14 @@ export const deletePhoto = (photoId) => api.delete(`/photos/${photoId}`);
 
 // Place search (Nominatim) + fun facts (Wikipedia), proxied by the server
 export const searchPlaces = (query) => api.get(`/places/search`, { params: { query } });
+
+// Meetly: real-world events/meetups board
+export const getMeetlyEvents = () => api.get('/meetly/events');
+export const getMeetlyEvent = (eventId) => api.get(`/meetly/events/${eventId}`);
+export const createMeetlyEvent = (data) => api.post('/meetly/events', data);
+export const deleteMeetlyEvent = (eventId) => api.delete(`/meetly/events/${eventId}`);
+export const rsvpMeetlyEvent = (eventId) => api.post(`/meetly/events/${eventId}/rsvp`);
+export const cancelMeetlyRsvp = (eventId) => api.delete(`/meetly/events/${eventId}/rsvp`);
 export const getPlaceFunFact = ({ wikipedia, name, lat, lon }) =>
   api.get(`/places/funfact`, { params: { wikipedia, name, lat, lon } });
 

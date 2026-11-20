@@ -10,6 +10,7 @@ import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import TripDetail from './pages/TripDetail';
 import Gallery from './pages/Gallery';
+import Meetly from './pages/Meetly';
 
 function App() {
   return (
@@ -52,6 +53,15 @@ function App() {
               element={
                 <PrivateRoute>
                   <Gallery />
+                </PrivateRoute>
+              }
+            />
+            {/* Hidden — not linked anywhere in the app; reachable only by URL */}
+            <Route
+              path="/meetly"
+              element={
+                <PrivateRoute>
+                  <Meetly />
                 </PrivateRoute>
               }
             />
