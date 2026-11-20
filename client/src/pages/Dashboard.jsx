@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
-import { Plus, MapPin, Calendar, Camera, Trash2, X, Users, Mail, Pencil, Images, PartyPopper } from 'lucide-react';
+import { Plus, MapPin, Calendar, Camera, Trash2, X, Users, Mail, Pencil, Images } from 'lucide-react';
 import { getTrips, createTrip, deleteTrip, getInvitations, respondToInvitation } from '../lib/api';
 import CompleteProfileModal from '../components/CompleteProfileModal';
 import ShareButton from '../components/ShareButton';
+import SuiteNav from '../components/SuiteNav';
 
 const emptyForm = { name: '', description: '', start_date: '', end_date: '' };
 
@@ -202,9 +203,7 @@ const Dashboard = () => {
       <header className="bg-white shadow-sm border-b border-neutral-200">
         <div className="container-page">
           <div className="flex items-center justify-between py-4">
-            <h1 className="text-2xl font-display font-bold text-primary-600">
-              Atlasly
-            </h1>
+            <SuiteNav theme="light" />
             <div className="flex items-center gap-2 sm:gap-4">
               <span className="hidden sm:inline text-sm text-neutral-600">
                 Welcome, {user?.fullName || user?.username}!
@@ -257,10 +256,6 @@ const Dashboard = () => {
               <Link to="/gallery" className="btn-outline">
                 <Images className="w-4 h-4 mr-2" />
                 Memories
-              </Link>
-              <Link to="/meetly" className="btn-outline">
-                <PartyPopper className="w-4 h-4 mr-2" />
-                Meetly
               </Link>
               {trips.length > 0 && (
                 <button className="btn-primary" onClick={() => setShowCreateForm(true)}>

@@ -1,22 +1,24 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Plus, ArrowLeft, LocateFixed, Loader2 } from 'lucide-react';
+import { Plus, LocateFixed, Loader2, Map as MapIcon, CalendarCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getMeetlyEvents, createMeetlyEvent } from '../lib/api';
 import EventsMap from '../components/EventsMap';
 import EventForm from '../components/EventForm';
 import EventPanel from '../components/EventPanel';
+import SuiteNav from '../components/SuiteNav';
+import MyEventsList from '../components/MyEventsList';
 
 // Same fallback center TripMap.jsx uses when there's nothing better to go on
 const DEFAULT_CENTER = [48.8566, 2.3522];
 
 /**
- * Meetly: a real-world events/meetups board. Deliberately styled as a
- * sister product rather than another page of Atlasly — same brand mark,
- * reversed (dark/light) color scheme, its own badge.
+ * Meetly: a real-world events/meetups board. Styled as a sister product
+ * rather than another page of Atlasly — same suite lockup, reversed
+ * (dark/light) color scheme, its own badge.
  */
 const Meetly = () => {
   const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState('browse'); // 'browse' | 'mine'
   const [events, setEvents] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
   const [flyTo, setFlyTo] = useState(null);
@@ -70,6 +72,11 @@ const Meetly = () => {
     setShowForm(true);
   };
 
+  const openForm = () => {
+    setActiveTab('browse'); // posting needs the map visible for drop-a-pin
+    setShowForm(true);
+  };
+
   const closeForm = () => {
     setShowForm(false);
     setPendingPin(null);
@@ -95,57 +102,85 @@ const Meetly = () => {
     );
   };
 
+  const hostingEvents = events.filter((e) => e.created_by === user.id);
+  const goingEvents = events.filter((e) => e.going);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-neutral-900 via-neutral-900 to-primary-900">
-      {/* Sister-product header: same wordmark, reversed (dark) scheme, Meetly badge */}
-      <header className="flex items-center gap-3 px-4 sm:px-6 py-4">
-        <Link
-          to="/dashboard"
-          className="p-2 -ml-2 rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-          title="Back to Atlasly"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
-        <span className="text-xl sm:text-2xl font-display font-bold text-white">Atlasly</span>
-        <span className="w-0.5 h-6 bg-primary-500 rounded-full" />
-        <span className="bg-primary-600 text-white font-display font-bold text-xs sm:text-sm px-3 py-1.5 rounded-md tracking-wide uppercase shadow-lg">
-          Meetly
-        </span>
+      {/* Sister-product header: shared suite lockup, reversed (dark) scheme */}
+      <header className="flex items-center px-4 sm:px-6 py-4">
+        <SuiteNav theme="dark" />
       </header>
 
-      {/* Contained map — not full-screen */}
+      {/* Tabs */}
+      <div className="px-4 sm:px-6 pb-3 flex items-center gap-2">
+        <button
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+            activeTab === 'browse'
+              ? 'bg-white text-primary-600'
+              : 'text-white/70 hover:text-white hover:bg-white/10'
+          }`}
+          onClick={() => setActiveTab('browse')}
+        >
+          <MapIcon className="w-4 h-4" />
+          Browse
+        </button>
+        <button
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+            activeTab === 'mine'
+              ? 'bg-white text-primary-600'
+              : 'text-white/70 hover:text-white hover:bg-white/10'
+          }`}
+          onClick={() => setActiveTab('mine')}
+        >
+          <CalendarCheck className="w-4 h-4" />
+          My Events
+        </button>
+      </div>
+
+      {/* Contained content area — not full-screen */}
       <main className="px-4 sm:px-6 pb-4 sm:pb-6">
         <div
           className="relative rounded-2xl overflow-hidden shadow-2xl border border-white/10"
-          style={{ height: 'calc(100vh - 92px)' }}
+          style={{ height: 'calc(100vh - 140px)' }}
         >
-          <EventsMap
-            events={events}
-            center={DEFAULT_CENTER}
-            zoom={3}
-            flyTo={flyTo}
-            onMarkerClick={(event) => setSelectedEventId(event.id)}
-            onMapClick={handleMapClick}
-            draftPin={pendingPin}
-          />
+          {activeTab === 'browse' ? (
+            <>
+              <EventsMap
+                events={events}
+                center={DEFAULT_CENTER}
+                zoom={3}
+                flyTo={flyTo}
+                onMarkerClick={(event) => setSelectedEventId(event.id)}
+                onMapClick={handleMapClick}
+                draftPin={pendingPin}
+              />
 
-          <button
-            className="absolute bottom-6 left-6 z-[1000] bg-white text-primary-600 rounded-full p-3.5 shadow-xl hover:bg-neutral-50 transition-colors disabled:opacity-60"
-            onClick={handleRecenter}
-            disabled={locating}
-            title="Back to my location"
-          >
-            {locating ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <LocateFixed className="w-5 h-5" />
-            )}
-          </button>
+              <button
+                className="absolute bottom-6 left-6 z-[1000] bg-white text-primary-600 rounded-full p-3.5 shadow-xl hover:bg-neutral-50 transition-colors disabled:opacity-60"
+                onClick={handleRecenter}
+                disabled={locating}
+                title="Back to my location"
+              >
+                {locating ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <LocateFixed className="w-5 h-5" />
+                )}
+              </button>
+            </>
+          ) : (
+            <MyEventsList
+              hosting={hostingEvents}
+              going={goingEvents}
+              onSelect={(id) => setSelectedEventId(id)}
+            />
+          )}
 
           {!showForm && (
             <button
               className="absolute bottom-6 right-6 z-[1000] bg-white text-primary-600 font-semibold rounded-full px-5 py-3.5 shadow-xl hover:bg-neutral-50 transition-colors flex items-center gap-2"
-              onClick={() => setShowForm(true)}
+              onClick={openForm}
             >
               <Plus className="w-4 h-4" />
               Post Event
