@@ -56,7 +56,6 @@ function App() {
                 </PrivateRoute>
               }
             />
-            {/* Hidden — not linked anywhere in the app; reachable only by URL */}
             <Route
               path="/meetly"
               element={
