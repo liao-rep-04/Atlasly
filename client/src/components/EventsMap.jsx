@@ -1,4 +1,5 @@
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
+import { useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -15,6 +16,19 @@ const MapClickHandler = ({ onMapClick }) => {
   useMapEvents({
     click: (e) => onMapClick && onMapClick(e.latlng),
   });
+  return null;
+};
+
+// Imperatively flies to a new location when `target` changes — used for the
+// one-time zoom-to-you once geolocation is granted, and the recenter button
+const FlyToController = ({ target }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (target) {
+      map.flyTo([target.lat, target.lng], target.zoom ?? 14, { duration: 1.2 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target]);
   return null;
 };
 
@@ -63,7 +77,7 @@ const draftPinIcon = L.divIcon({
  * marker to open its RSVP panel. While posting mode is on, clicking
  * anywhere on the map drops a draft pin for the new event's location.
  */
-const EventsMap = ({ events = [], center, onMarkerClick, onMapClick, draftPin }) => {
+const EventsMap = ({ events = [], center, zoom = 13, flyTo, onMarkerClick, onMapClick, draftPin }) => {
   const eventsWithCoords = events
     .filter((e) => e.latitude != null && e.longitude != null)
     .map((e) => ({ ...e, latitude: parseFloat(e.latitude), longitude: parseFloat(e.longitude) }));
@@ -72,7 +86,7 @@ const EventsMap = ({ events = [], center, onMarkerClick, onMapClick, draftPin })
     <div className="w-full h-full relative">
       <MapContainer
         center={center}
-        zoom={13}
+        zoom={zoom}
         scrollWheelZoom
         style={{ height: '100%', width: '100%' }}
         className="z-0"
@@ -82,6 +96,7 @@ const EventsMap = ({ events = [], center, onMarkerClick, onMapClick, draftPin })
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
+        <FlyToController target={flyTo} />
         {onMapClick && <MapClickHandler onMapClick={onMapClick} />}
         {draftPin && <Marker position={[draftPin.lat, draftPin.lng]} icon={draftPinIcon} />}
 
