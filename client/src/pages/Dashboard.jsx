@@ -203,7 +203,7 @@ const Dashboard = () => {
       <header className="bg-white shadow-sm border-b border-neutral-200">
         <div className="container-page">
           <div className="flex items-center justify-between py-4">
-            <SuiteNav theme="light" />
+            <SuiteNav theme="light" active="atlasly" />
             <div className="flex items-center gap-2 sm:gap-4">
               <span className="hidden sm:inline text-sm text-neutral-600">
                 Welcome, {user?.fullName || user?.username}!

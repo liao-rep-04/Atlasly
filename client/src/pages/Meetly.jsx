@@ -109,7 +109,7 @@ const Meetly = () => {
     <div className="min-h-screen bg-gradient-to-br from-neutral-900 via-neutral-900 to-primary-900">
       {/* Sister-product header: shared suite lockup, reversed (dark) scheme */}
       <header className="flex items-center px-4 sm:px-6 py-4">
-        <SuiteNav theme="dark" />
+        <SuiteNav theme="dark" active="meetly" />
       </header>
 
       {/* Tabs */}
